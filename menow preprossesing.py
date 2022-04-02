@@ -1,19 +1,21 @@
-
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from keras.models import load_model
 import os
-import random
 from PIL import Image
 from mtcnn.mtcnn import MTCNN
 
-""" no video sepperation version"""
+
+""" video sepperation version"""
+
+# הבעיות עם השייפ - בגלל שזה אריי של ליסטים - לתקן בפונקציות
+
 
 #pip install git+https://github.com/keras-team/keras-preprocessing.git
 
 # create image label DataFrame
-def image_label_df(json_path, imgs_path, imgs_per_person=5):
+def image_label_df(json_path, imgs_path):
 
     # json to dataframe
     df = pd.read_json(json_path, orient='records')
@@ -23,9 +25,8 @@ def image_label_df(json_path, imgs_path, imgs_per_person=5):
     participants = os.listdir(imgs_path)
     col = []
     for i in range(len(participants)):
-        all_imgs = os.listdir(imgs_path + "\\" + participants[i])
-        rand_imgs = random.sample(all_imgs, imgs_per_person)
-        col.append(rand_imgs)
+        imgs = os.listdir(imgs_path + "\\" + participants[i])
+        col.append(imgs)
     d = {'participants': participants, 'imgs': col}
     imgs_df = pd.DataFrame(data=d)
     imgs_df.participants = imgs_df.participants.apply(lambda x: int(x))
@@ -41,12 +42,11 @@ def image_label_df(json_path, imgs_path, imgs_per_person=5):
     return img_label_df
 
 
-
 json_path = "C:\\Users\\USER1\\Desktop\\MeNow Project\\CC_annotations\\CasualConversations.json"
-imgs_path = "C:\\Users\\USER1\\Desktop\\MeNow Project\\part1"
+imgs_path = "C:\\Users\\USER1\\Desktop\\MeNow Project\\Sampled Frames Dataset"
 
-img_label_df = image_label_df(json_path, imgs_path, 10)
-print(img_label_df)
+img_label_df = image_label_df(json_path, imgs_path)
+
 
 
 ## Detect Faces
@@ -85,52 +85,72 @@ def extract_face(filename):
 
 
 # load images and extract faces for all images in a directory
-def load_faces(img_label_df, plot_example):
-    faces = list()
-    # enumerate files
-    for filename in img_label_df.imgs.values:
-        # path
-        img_path = imgs_path + "\\" + filename
-        # get face
-        face = extract_face(img_path)
-        # store
-        faces.append(face)
+def load_faces(img_label_df, plot_example, num_face_per_video=5):
+    faces = list()    # (videos_list, img_list(10), 160 ,160 , 3)
+    participants = np.unique(img_label_df.index)
+    idx_les_5 = list()    # the indexs to drop from y - drop videos that not found 5 faces in them.
+    idx = 0
+    for par in participants:
+        par_df = img_label_df[img_label_df.index == par]
+        vid1_df = par_df[:100]
+        vid2_df = par_df[100:]
+        for vid_df in [vid1_df,vid2_df]:
+            vid_faces = list()
+            filename_list = list()
+            while len(vid_faces) < num_face_per_video:
+                filename = np.random.choice(vid_df.imgs.values, 1)[0]
+                if filename not in filename_list:
+                    img_path = imgs_path + "\\" + filename
+                    # get face
+                    face = extract_face(img_path)
+                    if face == "no face found":
+                        filename_list.append(filename)
+                        if len(filename_list) > (len(vid_faces) + 3):
+                            break        # give up this video
+                        else:
+                            continue     # keep trying find faces
+
+                    filename_list.append(filename)
+                    vid_faces.append(face)
+            if len(vid_faces) == 5:
+                faces.append(vid_faces)
+            else:
+                idx_les_5.append(idx)
+            idx += 1
+
     if plot_example==True:
-        # display 14 faces from the extracted faces
+        # display 10 faces from the extracted faces
         i = 1
-        # enumerate files
-        for filename in img_label_df.imgs.values[:14]:
-            # path
-            img_path = imgs_path + "\\" + filename
-            # get face
-            face_arr = extract_face(img_path)
-            if face_arr == "no face found":
-                face_arr = np.zeros((160, 160, 3))
-            print(i, face_arr.shape)
-            # embedding = get_embedding(facenet_model, face)
-            # print(embedding.shape)
+        for face in faces[0]:
+            print(i, face.shape)
             # plot
-            plt.subplot(2, 7, i)
+            plt.subplot(2, 5, i)
             plt.axis('off')
-            plt.imshow(face_arr)
+            plt.imshow(face)
             i += 1
         plt.show()
-    return faces
+
+    return faces, idx_les_5
 
 
 # load a dataset that contains one subdir for each class that in turn contains images
 def load_dataset(img_label_df, plot_example=False):
-    X = load_faces(img_label_df, plot_example)
+    X, idx_les_5 = load_faces(img_label_df, plot_example)
+    print(f"the indexs to drop from y: {idx_les_5}")
     X = np.asarray(X)
-    print(f"X shape: {X.shape}")
     y = img_label_df.label.values
-    # drop files were no face have found
-    idxs = np.where(X == "no face found")
-    idxs = idxs[0]
-    print(f"num of pic were no face found: {len(idxs)}")
-    X = np.delete(X, idxs, axis=(len(X.shape)-1))
-    y = np.delete(y, idxs)
-    return X, y
+    num_y_vid = X.shape[0] + len(idx_les_5)
+    y = np.reshape(y, (num_y_vid, -1))     # (videos_arr, labels(100))
+    if len(idx_les_5) > 0:
+        y = np.delete(y, np.asarray(idx_les_5), 0)
+    # Check all values in an array are equal to its first element
+    result = np.all(y[10] == y[10][0])
+    if result:
+        print('All Values in Array are same')
+    else:
+        print('All Values in Array are not same')
+    return X, y[:,:X.shape[1]]
+
 
 # train test split
 def train_test_split(df,fruc):
@@ -141,20 +161,23 @@ def train_test_split(df,fruc):
     test_df = df[df.index > (num_parti*fruc)]
     return train_df, test_df
 
-train_df, test_df = train_test_split(img_label_df, 0.7)
+train_df, test_df = train_test_split(img_label_df, 0.75)
 print(f"train size: {len(train_df)}, test size: {len(test_df)}")
 
+
 # load train dataset
-trainX, trainy = load_dataset(train_df, plot_example=False)
-print(trainX[0].shape, trainy.shape)
-print(trainX)
+trainX, trainy = load_dataset(train_df, plot_example=True)
+print(trainX.shape, trainy.shape)
 # load test dataset
 testX, testy = load_dataset(test_df)
-print(len(testX))
-print(f"final train size: {len(trainy)}, final test size: {len(testy)}")
+print(f"final train size: {len(trainy)} videos, final test size: {len(testy)} videos")
 # save arrays to one file in compressed format
-np.savez_compressed('faces-dataset.npz', trainX, trainy, testX, testy)
+np.savez_compressed('faces-dataset191.npz', trainX, trainy, testX, testy)
 
+"""
+trainX, testX - is a 5 dimetional array (videos_arr, img_arr(5), 160 ,160 , 3)
+trainy, testy - is a 5 dimetional array (videos_arr, img_arr(5), 160 ,160 , 3)
+"""
 
 
 ## Create Face Embeddings
@@ -174,133 +197,35 @@ def get_embedding(model, face_pixels):
     return yhat[0]
 
 # load the face dataset
-data = np.load('faces-dataset.npz', allow_pickle=True)
+data = np.load('faces-dataset191.npz', allow_pickle=True)
 trainX, trainy, testX, testy = data['arr_0'], data['arr_1'], data['arr_2'], data['arr_3']
 print('Loaded: ', trainX.shape, trainy.shape, testX.shape, testy.shape)
+
+
 # load the facenet model
 facenet_model = load_model('facenet_keras.h5')
 # summarize input and output shape
 print(facenet_model.inputs)
 print(facenet_model.outputs)
+
+
 # convert each face in the train set to an embedding
-newTrainX = list()
-for face_pixels in trainX:
-    embedding = get_embedding(facenet_model, face_pixels)
-    newTrainX.append(embedding)
-newTrainX = np.asarray(newTrainX)
+def faces_to_embeddings(X_arr):
+    new_X_arr = list()
+    for vid_imgs in X_arr:
+        vid_embedding = list()
+        for face_pixels in vid_imgs:
+            embedding = get_embedding(facenet_model, face_pixels)
+            vid_embedding.append(embedding)
+        vid_embedding = np.asarray(vid_embedding)
+        new_X_arr.append(vid_embedding)
+    new_X_arr = np.asarray(new_X_arr)
+    return new_X_arr
+
+newTrainX = faces_to_embeddings(trainX)
 print(newTrainX.shape)
-# convert each face in the test set to an embedding
-newTestX = list()
-for face_pixels in testX:
-    embedding = get_embedding(facenet_model, face_pixels)
-    newTestX.append(embedding)
-newTestX = np.asarray(newTestX)
+newTestX = faces_to_embeddings(testX)
 print(newTestX.shape)
+
 # save arrays to one file in compressed format
-np.savez_compressed('faces-embeddings.npz', newTrainX, trainy, newTestX, testy)
-
-
-
-
-
-"""
-
-
-
-# initialize Keras’ ImageDataGenerator class
-train_datagen = ImageDataGenerator(rescale=1/ 255.0, validation_split=0.20)
-test_datagen = ImageDataGenerator(rescale=1 / 255.0)
-
-# initialize our training, validation and testing generator
-batch_size = 8
-train_generator = train_datagen.flow_from_dataframe(
-    dataframe=train_df,
-    directory=path,
-    x_col="imgs",
-    y_col="label",
-    target_size=(100, 100),
-    batch_size=batch_size,
-    class_mode="categorical",
-    subset='training',
-    shuffle=True,
-    seed=42
-)
-valid_generator = train_datagen.flow_from_dataframe(
-    dataframe=train_df,
-    directory=path,
-    x_col="imgs",
-    y_col="label",
-    target_size=(100, 100),
-    batch_size=batch_size,
-    class_mode="categorical",
-    subset='validation',
-    shuffle=True,
-    seed=42
-)
-test_generator = test_datagen.flow_from_dataframe(
-    dataframe=test_df,
-    directory=path,
-    x_col="imgs",
-    target_size=(100, 100),
-    batch_size=1,
-    class_mode=None,
-    shuffle=False,
-)
-
-#
-# #define the metrics
-# METRICS = [
-#       keras.metrics.TruePositives(name='tp'),
-#       keras.metrics.FalsePositives(name='fp'),
-#       keras.metrics.TrueNegatives(name='tn'),
-#       keras.metrics.FalseNegatives(name='fn'),
-#       keras.metrics.BinaryAccuracy(name='accuracy'),
-#       keras.metrics.Precision(name='precision'),
-#       keras.metrics.Recall(name='recall'),
-#       keras.metrics.AUC(name='auc'),
-#       keras.metrics.AUC(name='prc', curve='PR'), # precision-recall curve
-# ]
-#
-#
-# # Function that creates a simple neural network
-# def make_model(metrics=METRICS):
-#     input = tf.keras.Input(shape=(32,))
-#     face = extract_face(input)
-#     embedding = get_embedding(facenet_model, face)
-#     # x = keras.layers.Dense(32, activation="relu")(embedding)
-#     # x = keras.layers.Dropout(0.5)(x)
-#     # x = keras.layers.Dense(1)(x)
-#     # output = tf.nn.sigmoid(x)
-#     output = embedding
-#
-#     model = keras.Model(input, output)
-#     print(model.summary())
-#     model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3),
-#                   loss=tf.keras.losses.BinaryCrossentropy(),
-#                   metrics=METRICS)
-#     return model
-#
-# make_model()
-
-
-#
-# print(tf.config.list_physical_devices())
-# print(tf.test.is_gpu_available())
-
-
-
-
-
-# df['all_files'] = df[['dark_files', 'files']].sum(axis=1)
-# print(len(df.dark_files[1]) + len(df.files[1]) == len(df.all_files[1]))
-# df = df.explode('all_files')
-# df_label = df.label.apply(lambda x: int(x['skin-type'])).reset_index(drop=True)
-# df_filename = df.all_files.reset_index(drop=True)
-# df_skintype = pd.concat([df_filename, df_label], axis=1).rename(columns={'all_files': 'filename'})
-# print(df_skintype)
-
-
-"""
-
-
-
+np.savez_compressed('faces-embeddings191.npz', newTrainX, trainy, newTestX, testy)
