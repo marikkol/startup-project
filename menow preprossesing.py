@@ -32,7 +32,6 @@ def image_label_df(json_path, imgs_path):
     # new df of filename col and skin-type(label) col
     img_label_df = pd.concat([df, imgs_df], axis=1, join="inner")
     img_label_df = img_label_df.explode('imgs')
-    #img_label_df.label = img_label_df.label.apply(lambda x: x['skin-type'])     להכליל את הלייבלים, לשימוש של שלושתם
     img_label_df.imgs = np.array([str(x) + "\\" for x in img_label_df.index]) + img_label_df.imgs
     img_label_df = img_label_df[['imgs', 'label']]
 
@@ -81,13 +80,15 @@ def extract_face(filename):
 
 
 # load images and extract faces for all images in a directory
-def load_faces(img_label_df, plot_example, num_face_per_video=5):
+def load_faces(img_label_df, num_face_per_video=5):
 
-    faces = list()    # (videos_list, img_list(10), 160 ,160 , 3)
+    faces = list()    # (videos_list, img_list(5), 160 ,160 , 3)
+    plot_tuples = list()    # adding par num for the plot to make sure the label fits the image
     participants = np.unique(img_label_df.index)
     idx_les_5 = list()    # the indexs to drop from y (dropping videos that not found 5 faces in them)
     idx = 0
     for par in participants:
+        par_inx = int(par)
         par_df = img_label_df[img_label_df.index == par]
         vid1_df = par_df[:100]
         vid2_df = par_df[100:]
@@ -111,53 +112,63 @@ def load_faces(img_label_df, plot_example, num_face_per_video=5):
                     vid_faces.append(face)
             if len(vid_faces) == 5:
                 faces.append(vid_faces)
+                plot_tuples.append((vid_faces,par_inx))
             else:
                 idx_les_5.append(idx)
             idx += 1
 
-    if plot_example==True:
-        # display 10 faces from the extracted faces
-        i = 1
-        for face in faces[0]:
-            print(i, face.shape)
-            plt.subplot(2, 5, i)
-            plt.axis('off')
-            plt.imshow(face)
-            i += 1
-        plt.show()
-
-    return faces, idx_les_5
+    return faces, plot_tuples, idx_les_5
 
 
 # load a dataset that contains one subdir for each class that in turn contains images
 def load_dataset(img_label_df, plot_example=False):
 
-    X, idx_les_5 = load_faces(img_label_df, plot_example)
+    X, faces_par, idx_les_5 = load_faces(img_label_df)
     print(f"the indexs to drop from y: {idx_les_5}")
     X = np.asarray(X)
+    faces_par = np.asarray(faces_par, dtype=object)
     y = img_label_df.label.values
     num_y_vid = X.shape[0] + len(idx_les_5)
     y = np.reshape(y, (num_y_vid, -1))     # (videos_arr, labels(100))
     if len(idx_les_5) > 0:
         y = np.delete(y, np.asarray(idx_les_5), 0)
 
-    # Check all values in an array are equal to its first element
-    result = np.all(y[10] == y[10][0])
-    if result:
-        print('All Values in Array are same')
-    else:
-        print('All Values in Array are not same')
+    # sanity check
+    assert np.all(y[10] == y[10][0]), "all y values should be the same for all frames of each video"
 
-    return X, y[:,:X.shape[1]]
+    if plot_example==True:
+        # display 9 faces from the extracted faces
+        plt.figure(figsize=(10, 10))
+        rand_choice = np.random.choice(range(len(X)), 9)
+        faces_par_9 = faces_par[rand_choice]
+        y_9 = y[rand_choice,0]
+        for i in range(9):
+            faces, par = faces_par_9[i]
+            face_idx = np.random.choice(range(5), 1)[0]
+            face = faces[face_idx]
+            label = y_9[i]
+            plt.subplot(3, 3, i + 1)
+            plt.imshow(face.astype("uint8"))
+            plt.title(f"par: {par}\n" + str(list(label.values())))
+            plt.axis("off")
+        plt.show()
+
+    print(X.shape)
+    print(y.shape)
+    print(X.shape[1])
+
+    return X, y[:,:X.shape[1]]     # y.shape: (videos_arr, img_arr(5), lable(1))
 
 
 # train test split
 def train_test_split(df,fruc):
     participants = np.unique(df.index)
-    num_parti = len(participants)
-    print(f"the num of participants: {num_parti}")
-    train_df = df[df.index < (num_parti*fruc)]
-    test_df = df[df.index > (num_parti*fruc)]
+    sorted = np.sort(participants)
+    splittig_idx = int(len(participants)*fruc)
+    splittig_par = int(sorted[splittig_idx])
+    print(f"the num of participants: {len(participants)}")
+    train_df = df[df.index <= splittig_par]
+    test_df = df[df.index > splittig_par]
     return train_df, test_df
 
 train_df, test_df = train_test_split(img_label_df, 0.75)
@@ -171,11 +182,11 @@ print(trainX.shape, trainy.shape)
 testX, testy = load_dataset(test_df)
 print(f"final train size: {len(trainy)} videos, final test size: {len(testy)} videos")
 # save arrays to one file in compressed format
-np.savez_compressed('faces-dataset191.npz', trainX, trainy, testX, testy)
+np.savez_compressed('faces-dataset4parts_1.npz', trainX, trainy, testX, testy)
 
 """
 trainX, testX - is a 5 dimetional array (videos_arr, img_arr(5), 160 ,160 , 3)
-trainy, testy - is a 5 dimetional array (videos_arr, img_arr(5), 160 ,160 , 3)
+trainy, testy - is a 5 dimetional array (videos_arr, img_arr(5), lable(1))
 """
 
 
@@ -198,13 +209,13 @@ def get_embedding(model, face_pixels):
 
 
 # load the face dataset
-data = np.load('faces-dataset191.npz', allow_pickle=True)
+data = np.load('faces-dataset4parts_1.npz', allow_pickle=True)
 trainX, trainy, testX, testy = data['arr_0'], data['arr_1'], data['arr_2'], data['arr_3']
 print('Loaded: ', trainX.shape, trainy.shape, testX.shape, testy.shape)
 
 
 # load the facenet model
-facenet_model = load_model('facenet_keras.h5')
+facenet_model = load_model('facenet_keras.h5', compile=False)
 # summarize input and output shape
 print(facenet_model.inputs)
 print(facenet_model.outputs)
@@ -230,5 +241,5 @@ newTestX = faces_to_embeddings(testX)
 print(newTestX.shape)
 
 # save arrays to one file in compressed format
-np.savez_compressed('faces-embeddings191.npz', newTrainX, trainy, newTestX, testy)
+np.savez_compressed('faces-embeddings4parts_1.npz', newTrainX, trainy, newTestX, testy)
 

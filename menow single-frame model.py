@@ -69,18 +69,24 @@ print(len(trainX), 'training examples')
 print(len(valX), 'validation examples')
 print(len(testX), 'test examples')
 
-
-
 # Create an input pipeline using tf.data
 
-batch_size = 32
 
 def arr_to_dataset(Xarr, yarr, label='skin-type', model_type='single-frame',  shuffle=True, batch_size=32):
+
     if model_type == 'single-frame':
         Xarr = Xarr.reshape([-1, 128])
         yarr = yarr.reshape([-1, 1])
-        yarr = np.array([int(xi[label]) for xi in yarr[:,0]])
-        print(f'Xarr shape: {Xarr.shape}, yarr shape: {yarr.shape}')
+
+        if label == "skin-type":
+            yarr = np.array([int(xi[label]) for xi in yarr[:,0]])
+            print(f'Xarr shape: {Xarr.shape}, yarr shape: {yarr.shape}')
+            unique = np.unique(yarr)
+            num_classes = len(unique)
+            print(f"num of classes: {num_classes}")
+            # one-hot representation
+            yarr = tf.keras.utils.to_categorical(yarr - 1)
+
     elif model_type == 'late-fusion':
         yarr = yarr[:,0]
     ds = tf.data.Dataset.from_tensor_slices((Xarr, yarr))
@@ -113,7 +119,7 @@ print('label batch shape:', label_batch.shape)
 # layer(age_col)
 
 
-batch_size = 32
+batch_size = 64
 train_ds = arr_to_dataset(trainX, trainy)
 val_ds = arr_to_dataset(valX, valy, shuffle=False, batch_size=batch_size)
 test_ds = arr_to_dataset(testX, testy, shuffle=False, batch_size=batch_size)
@@ -138,16 +144,16 @@ METRICS = [
 
 # Function that creates a simple neural network
 def make_model(label="skin-type", model_type='single-frame', metrics=['accuracy']):
-    label_arr = np.array([int(xi[label]) for xi in testy[:,0]])
-    unique = np.unique(label_arr)
-    num_labels = len(unique)
-    print(num_labels)
-
+    num_classes =6
     if model_type == 'single-frame':
         embedding_input = tf.keras.Input(shape=(128,), name='embedding_input')
-        x = tf.keras.layers.Dense(32, activation="relu")(embedding_input)
+        x = tf.keras.layers.LayerNormalization(axis=1)(embedding_input)
+        x = tf.keras.layers.Dense(64, activation="relu")(x)
         x = tf.keras.layers.Dropout(0.5)(x)
-        x = tf.keras.layers.Dense(num_labels+1)(x)
+        #x = tf.keras.layers.LayerNormalization(axis=1)(x)
+        x = tf.keras.layers.Dense(32, activation="relu")(x)
+        x = tf.keras.layers.Dropout(0.5)(x)
+        x = tf.keras.layers.Dense(num_classes)(x)
         output = tf.nn.sigmoid(x)
         model = tf.keras.Model(embedding_input, output)
 
@@ -160,7 +166,7 @@ def make_model(label="skin-type", model_type='single-frame', metrics=['accuracy'
     #     output = tf.nn.sigmoid(x)
 
     model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3),
-                  loss=tf.keras.losses.SparseCategoricalCrossentropy(),
+                  loss=tf.keras.losses.CategoricalCrossentropy(),
                   metrics=metrics)
 
     return model
@@ -238,14 +244,15 @@ pred_y = model.predict(test_ds)
 print(pred_y.shape, testy.shape)
 testy = testy.reshape([-1, 1])
 testy = np.array([int(xi['skin-type']) for xi in testy[:, 0]])
+testy = tf.keras.utils.to_categorical(testy - 1)
 print(pred_y.shape, testy.shape)
-evaluate_preds(testy, np.argmax(pred_y, axis=1))
+evaluate_preds(np.argmax(testy, axis=1), np.argmax(pred_y, axis=1))
 
 
 # Create a Classification Report
-print(classification_report(testy, np.argmax(pred_y, axis=1)))
+print(classification_report(np.argmax(testy, axis=1), np.argmax(pred_y, axis=1)))
 
-conf_mat = confusion_matrix(testy, np.argmax(pred_y, axis=1))
+conf_mat = confusion_matrix(np.argmax(testy, axis=1), np.argmax(pred_y, axis=1))
 fig, ax = plt.subplots(figsize=(8,6))
 sns.heatmap(conf_mat, annot=True, fmt='d')
 plt.ylabel('Actual')
