@@ -44,7 +44,6 @@ imgs_path = "C:\\Users\\USER1\\Desktop\\MeNow Project\\Sampled Frames Dataset"
 img_label_df = image_label_df(json_path, imgs_path)
 
 
-
 ## Detect Faces
 
 
@@ -160,7 +159,7 @@ def load_dataset(img_label_df, plot_example=False):
     return X, y[:,:X.shape[1]]     # y.shape: (videos_arr, img_arr(5), lable(1))
 
 
-# train test split
+# train test split (different range of participants indexs at each part)
 def train_test_split(df,fruc):
     participants = np.unique(df.index)
     sorted = np.sort(participants)
@@ -182,7 +181,7 @@ print(trainX.shape, trainy.shape)
 testX, testy = load_dataset(test_df)
 print(f"final train size: {len(trainy)} videos, final test size: {len(testy)} videos")
 # save arrays to one file in compressed format
-np.savez_compressed('faces-dataset4parts_1.npz', trainX, trainy, testX, testy)
+np.savez_compressed('faces-dataset4parts_2.npz', trainX, trainy, testX, testy)
 
 """
 trainX, testX - is a 5 dimetional array (videos_arr, img_arr(5), 160 ,160 , 3)
@@ -209,7 +208,7 @@ def get_embedding(model, face_pixels):
 
 
 # load the face dataset
-data = np.load('faces-dataset4parts_1.npz', allow_pickle=True)
+data = np.load('faces-dataset4parts_2.npz', allow_pickle=True)
 trainX, trainy, testX, testy = data['arr_0'], data['arr_1'], data['arr_2'], data['arr_3']
 print('Loaded: ', trainX.shape, trainy.shape, testX.shape, testy.shape)
 
@@ -241,5 +240,5 @@ newTestX = faces_to_embeddings(testX)
 print(newTestX.shape)
 
 # save arrays to one file in compressed format
-np.savez_compressed('faces-embeddings4parts_1.npz', newTrainX, trainy, newTestX, testy)
+np.savez_compressed('faces-embeddings4parts_2.npz', newTrainX, trainy, newTestX, testy)
 

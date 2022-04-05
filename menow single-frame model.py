@@ -25,9 +25,24 @@ single-frame model
 
 
 # load dataset
-data = np.load('faces-embeddings191.npz', allow_pickle=True)
+data = np.load('faces-embeddings4parts_.npz', allow_pickle=True)
 trainX, trainy, testX, testy = data['arr_0'], data['arr_1'], data['arr_2'], data['arr_3']
 print('Dataset: train=%d, test=%d' % (trainX.shape[0], testX.shape[0]))
+
+print(trainX.shape, trainy.shape, testX.shape, testy.shape)
+
+data = np.load('faces-embeddings4parts_1.npz', allow_pickle=True)
+trainX1, trainy1, testX1, testy1 = data['arr_0'], data['arr_1'], data['arr_2'], data['arr_3']
+print('Dataset: train=%d, test=%d' % (trainX1.shape[0], testX1.shape[0]))
+
+print(trainX1.shape, trainy1.shape, testX1.shape, testy1.shape)
+
+trainX = np.concatenate((trainX, trainX1), axis=0)
+trainy = np.concatenate((trainy, trainy1), axis=0)
+testX = np.concatenate((testX, testX1), axis=0)
+testy = np.concatenate((testy, testy1), axis=0)
+
+print(trainX.shape, trainy.shape, testX.shape, testy.shape)
 
 """
 X shape:   (vids, imgs, embeddings)
@@ -72,7 +87,7 @@ print(len(testX), 'test examples')
 # Create an input pipeline using tf.data
 
 
-def arr_to_dataset(Xarr, yarr, label='skin-type', model_type='single-frame',  shuffle=True, batch_size=32):
+def arr_to_dataset(Xarr, yarr, label='skin-type', model_type='single-frame',  shuffle=True, batch_size=64):
 
     if model_type == 'single-frame':
         Xarr = Xarr.reshape([-1, 128])
