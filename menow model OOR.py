@@ -59,7 +59,7 @@ class MenowModel():
     def __init__(self, trainX, trainy, testX, testy, label='skin-type', model_type='single-frame'):
 
         # sanity check
-        assert len(trainX)==len(trainy) and len(testX)==len(testy), "size of X and y hve to be the same"
+        assert len(trainX)==len(trainy) and len(testX)==len(testy), "size of X and y have to be the same"
 
         self.label = label
         self.model_type = model_type

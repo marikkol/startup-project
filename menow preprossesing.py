@@ -82,15 +82,23 @@ def extract_face(filename):
 def load_faces(img_label_df, num_face_per_video=5):
 
     faces = list()    # (videos_list, img_list(5), 160 ,160 , 3)
+    labels = list()
     plot_tuples = list()    # adding par num for the plot to make sure the label fits the image
     participants = np.unique(img_label_df.index)
-    idx_les_5 = list()    # the indexs to drop from y (dropping videos that not found 5 faces in them)
-    idx = 0
+    les_5 = list()    # only for showing the pars that not found 5 faces in them.
     for par in participants:
-        par_inx = int(par)
         par_df = img_label_df[img_label_df.index == par]
-        vid1_df = par_df[:100]
-        vid2_df = par_df[100:]
+        if len(par_df.imgs) < num_face_per_video:
+            print(f"for par: {par}, les then required frames")
+            continue
+        vid_df = par_df.imgs.apply(lambda x: x.split('_')).apply(lambda x: x[1])
+        unique = np.unique(vid_df.values)
+        if len(unique) < 2:
+            print(f"there should frames from 2 videos, for par: {par} theres {len(unique)}")
+            continue
+        par_df['vid'] = vid_df.values
+        vid1_df = par_df[par_df.vid == unique[0]]
+        vid2_df = par_df[par_df.vid == unique[1]]
         for vid_df in [vid1_df,vid2_df]:
             vid_faces = list()
             filename_list = list()
@@ -106,34 +114,34 @@ def load_faces(img_label_df, num_face_per_video=5):
                             break        # give up this video
                         else:
                             continue     # keep trying find faces
-
                     filename_list.append(filename)
                     vid_faces.append(face)
-            if len(vid_faces) == 5:
+            if len(vid_faces) == num_face_per_video:
                 faces.append(vid_faces)
-                plot_tuples.append((vid_faces,par_inx))
+                labels.append([vid_df.label.values[0] for i in range(num_face_per_video)])   # create y with same shape as X
+                plot_tuples.append((vid_faces,par))
             else:
-                idx_les_5.append(idx)
-            idx += 1
+                les_5.append(par)     # list of vid_idx where less than 5 imgs found
 
-    return faces, plot_tuples, idx_les_5
+    return faces, labels, plot_tuples, les_5
 
 
 # load a dataset that contains one subdir for each class that in turn contains images
 def load_dataset(img_label_df, plot_example=False):
 
-    X, faces_par, idx_les_5 = load_faces(img_label_df)
-    print(f"the indexs to drop from y: {idx_les_5}")
+    X, y, faces_par, les_5 = load_faces(img_label_df)
+    print(f"pars that not found 5 faces in them: {les_5}")
     X = np.asarray(X)
+    y = np.asarray(y)
     faces_par = np.asarray(faces_par, dtype=object)
-    y = img_label_df.label.values
-    num_y_vid = X.shape[0] + len(idx_les_5)
-    y = np.reshape(y, (num_y_vid, -1))     # (videos_arr, labels(100))
-    if len(idx_les_5) > 0:
-        y = np.delete(y, np.asarray(idx_les_5), 0)
+    #y = img_label_df.label.values
+    #num_y_vid = X.shape[0] + len(idx_les_5)
+    #y = np.reshape(y, (num_y_vid, -1))     # (videos_arr, labels(100))
+    #if len(idx_les_5) > 0:
+    #    y = np.delete(y, np.asarray(idx_les_5), 0)
 
     # sanity check
-    assert np.all(y[10] == y[10][0]), "all y values should be the same for all frames of each video"
+    #assert np.all(y[10] == y[10][0]), "all y values should be the same for all frames of each video"
 
     if plot_example==True:
         # display 9 faces from the extracted faces
@@ -152,11 +160,7 @@ def load_dataset(img_label_df, plot_example=False):
             plt.axis("off")
         plt.show()
 
-    print(X.shape)
-    print(y.shape)
-    print(X.shape[1])
-
-    return X, y[:,:X.shape[1]]     # y.shape: (videos_arr, img_arr(5), lable(1))
+    return X, y     # y.shape: (videos_arr, lables_arr(5 same))
 
 
 # train test split (different range of participants indexs at each part)
