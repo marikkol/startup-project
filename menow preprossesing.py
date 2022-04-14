@@ -134,14 +134,6 @@ def load_dataset(img_label_df, plot_example=False):
     X = np.asarray(X)
     y = np.asarray(y)
     faces_par = np.asarray(faces_par, dtype=object)
-    #y = img_label_df.label.values
-    #num_y_vid = X.shape[0] + len(idx_les_5)
-    #y = np.reshape(y, (num_y_vid, -1))     # (videos_arr, labels(100))
-    #if len(idx_les_5) > 0:
-    #    y = np.delete(y, np.asarray(idx_les_5), 0)
-
-    # sanity check
-    #assert np.all(y[10] == y[10][0]), "all y values should be the same for all frames of each video"
 
     if plot_example==True:
         # display 9 faces from the extracted faces
@@ -185,7 +177,7 @@ print(trainX.shape, trainy.shape)
 testX, testy = load_dataset(test_df)
 print(f"final train size: {len(trainy)} videos, final test size: {len(testy)} videos")
 # save arrays to one file in compressed format
-np.savez_compressed('faces-dataset4parts_2.npz', trainX, trainy, testX, testy)
+np.savez_compressed('faces-dataset4parts_9.npz', trainX, trainy, testX, testy)
 
 """
 trainX, testX - is a 5 dimetional array (videos_arr, img_arr(5), 160 ,160 , 3)
@@ -212,7 +204,7 @@ def get_embedding(model, face_pixels):
 
 
 # load the face dataset
-data = np.load('faces-dataset4parts_2.npz', allow_pickle=True)
+data = np.load('faces-dataset4parts_9.npz', allow_pickle=True)
 trainX, trainy, testX, testy = data['arr_0'], data['arr_1'], data['arr_2'], data['arr_3']
 print('Loaded: ', trainX.shape, trainy.shape, testX.shape, testy.shape)
 
@@ -244,5 +236,5 @@ newTestX = faces_to_embeddings(testX)
 print(newTestX.shape)
 
 # save arrays to one file in compressed format
-np.savez_compressed('faces-embeddings4parts_2.npz', newTrainX, trainy, newTestX, testy)
+np.savez_compressed('faces-embeddings4parts_9.npz', newTrainX, trainy, newTestX, testy)
 
