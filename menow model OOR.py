@@ -22,7 +22,7 @@ from imblearn.over_sampling import SMOTE
 
 
 """
-single-frame model
+train, test, val vertion
 """
 
 
@@ -187,7 +187,7 @@ class MenowModel():
 
 
 #skintype_singleframe_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='skin-type', model_type='single-frame')
-skintype_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='skin-type', model_type='late-fusion', imbalance='oversample')
+skintype_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='skin-type', model_type='single-frame', imbalance='oversample')
 
 
 # #Checking the format of the data the df_to_dataset function returns
