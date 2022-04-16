@@ -11,7 +11,6 @@ from imblearn.over_sampling import SMOTE
 
 
 
-
 # load dataset
 trainX_arr = np.empty((0,5,128))
 trainy_arr = np.empty((0,5))
@@ -36,6 +35,7 @@ print(f'the test frac.: {(100 * testX_arr.shape[0]/(trainX_arr.shape[0] + testX_
 X shape:   (vids, imgs, embeddings)
 y shape:   (vidslable, imgs)
 """
+
 
 
 class MenowModel():
@@ -133,6 +133,7 @@ class MenowModel():
         self.num_classes = len(unique)
         print(f"num of classes: {self.num_classes}")
 
+
     # Examine the class label imbalance
     def train_lable_dist(self, show_dis=True):
         if self.label == 'skin-type' or self.label == 'gender':
@@ -153,15 +154,22 @@ class MenowModel():
             plt.show()
             return
 
+
     # Create an input pipeline using tf.data
     def create_datasets(self, shuffle=True, batch_size=32):
 
         if self.model_type == 'single-frame':
+            print(f'trainX.shape: {self.trainX.shape}, trainy.shape: {self.trainy.shape}')
+            print(f'testX.shape: {self.testX.shape}, testy.shape: {self.testy.shape}')
 
             if self.label == "skin-type":
                 # one-hot representation
                 trainy = tf.keras.utils.to_categorical(self.trainy - 1)
                 testy = tf.keras.utils.to_categorical(self.testy - 1)
+
+            elif self.label == 'age':
+                trainy = self.trainy
+                testy = self.testy
 
         elif self.model_type == 'late-fusion':
             print(f'trainX.shape: {self.trainX.shape}, trainy.shape: {self.trainy.shape}')
@@ -194,6 +202,7 @@ class MenowModel():
 
         return train_ds, test_ds
 
+
     # Function that creates a simple neural network
     def make_model(self, learning_rate=1e-5, metrics=['accuracy']):
 
@@ -220,6 +229,17 @@ class MenowModel():
                 # x = tf.keras.layers.Dropout(0.5)(x)
                 x = tf.keras.layers.Dense(self.num_classes)(x)
                 output = tf.nn.softmax(x)
+                model = tf.keras.Model(embedding_input, output)
+
+            elif self.label == 'age':
+                embedding_input = tf.keras.Input(shape=(128,), name='embedding_input')
+                x = tf.keras.layers.LayerNormalization(axis=1)(embedding_input)
+                x = tf.keras.layers.Dense(60, activation="relu")(x)
+                x = tf.keras.layers.Dropout(0.5)(x)
+                x = tf.keras.layers.LayerNormalization(axis=1)(x)
+                x = tf.keras.layers.Dense(64, activation="relu")(x)
+                # x = tf.keras.layers.Dropout(0.5)(x)
+                output = tf.keras.layers.Dense(1)(x)
                 model = tf.keras.Model(embedding_input, output)
 
         elif self.model_type == 'late-fusion':
@@ -269,6 +289,7 @@ class MenowModel():
 
         return model
 
+
     # train the model
     def fit(self, model, train_ds, val_ds, EPOCHS=90, show_plots=True):
 
@@ -315,12 +336,9 @@ class MenowModel():
             elif self.label == 'age':
                 acc = history.history['mean_absolute_error']
                 val_acc = history.history['val_mean_absolute_error']
-
             loss = history.history['loss']
             val_loss = history.history['val_loss']
-
             epochs_range = range(len(acc))
-
             plt.figure(figsize=(8, 8))
             plt.subplot(1, 2, 1)
             if self.label == 'skin-type' or self.label == 'gender':
@@ -331,27 +349,24 @@ class MenowModel():
                 plt.plot(epochs_range, val_acc, label='Validation MAE')
             plt.legend(loc='lower right')
             plt.title('Training and Validation Accuracy')
-
             plt.subplot(1, 2, 2)
             plt.plot(epochs_range, loss, label='Training Loss')
             plt.plot(epochs_range, val_loss, label='Validation Loss')
             plt.legend(loc='upper right')
             plt.title('Training and Validation Loss')
-
             plt.show()
 
         return history
+
 
     def evaluate(self, model):
 
         y_preds = model.predict(val_ds)
         y_true = self.testy
-        print(y_true.shape, y_preds.shape)
         if self.label == "skin-type":
             y_true = tf.keras.utils.to_categorical(y_true - 1)
         elif self.label == "gender":
             y_true = tf.keras.utils.to_categorical(y_true)
-        print(y_true.shape, y_preds.shape)
 
         if self.label == 'skin-type' or self.label == 'gender':
             y_true, y_preds = np.argmax(y_true, axis=1), np.argmax(y_preds, axis=1)
@@ -396,13 +411,13 @@ class MenowModel():
 #skintype_singleframe_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='skin-type', model_type='single-frame')
 #skintype_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='skin-type', model_type='late-fusion')
 #gender_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='gender', model_type='late-fusion')
-age_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='age', model_type='single-frame')
-age_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='age', model_type='late-fusion')
+age_singleframe_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='age', model_type='single-frame')
+#age_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='age', model_type='late-fusion')
 
 
 
 #Checking the format of the data the df_to_dataset function returns
-train_ds, val_ds = age_latefusion_model.create_datasets()
+train_ds, val_ds = age_singleframe_model.create_datasets()
 [(embedding_batch, label_batch)] = train_ds.take(1)
 print('embedding batch shape:', embedding_batch.shape)
 print('label batch shape:', label_batch.shape)
@@ -423,12 +438,12 @@ METRICS = [
 ]
 
 # Model summary
-model = age_latefusion_model.make_model()   # metrics=METRICS
+model = age_singleframe_model.make_model()   # metrics=METRICS
 print(model.summary())
 
-age_latefusion_model.fit(model, train_ds, val_ds)
+age_singleframe_model.fit(model, train_ds, val_ds)
 
-age_latefusion_model.evaluate(model)
+age_singleframe_model.evaluate(model)
 
 
 
