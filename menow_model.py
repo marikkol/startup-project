@@ -41,7 +41,7 @@ y shape:   (vidslable, imgs)
 class MenowModel():
 
 
-    def __init__(self, trainX, trainy, testX, testy, label='skin-type', model_type='late-fusion', imbalance='oversample'):
+    def __init__(self, trainX, trainy, testX, testy, label='skin-type', model_type='late-fusion', imbalance='None'):
 
         # sanity check
         assert len(trainX)==len(trainy) and len(testX)==len(testy), "size of X and y have to be the same"
@@ -93,8 +93,6 @@ class MenowModel():
                 [-1, 128 * num_frames_per_vid])
             self.trainy, self.testy = trainy[:, 0], testy[:, 0]
             if self.label == 'skin-type':
-                self.trainy = np.array([xi[self.label] for xi in self.trainy])
-                self.testy = np.array([xi[self.label] for xi in self.testy])
                 # no missing values
                 self.trainy = np.array([int(xi[self.label]) for xi in self.trainy])
                 self.testy = np.array([int(xi[self.label]) for xi in self.testy])
@@ -135,7 +133,7 @@ class MenowModel():
 
 
     # Examine the class label imbalance
-    def train_lable_dist(self, show_dis=True):
+    def train_lable_dist(self, show_dis=False):
         if self.label == 'skin-type' or self.label == 'gender':
             unique = np.unique(self.trainy)
             bincount = np.bincount(self.trainy)
@@ -158,39 +156,25 @@ class MenowModel():
     # Create an input pipeline using tf.data
     def create_datasets(self, shuffle=True, batch_size=32):
 
-        if self.model_type == 'single-frame':
-            print(f'trainX.shape: {self.trainX.shape}, trainy.shape: {self.trainy.shape}')
-            print(f'testX.shape: {self.testX.shape}, testy.shape: {self.testy.shape}')
+        print(f'trainX.shape: {self.trainX.shape}, trainy.shape: {self.trainy.shape}')
+        print(f'testX.shape: {self.testX.shape}, testy.shape: {self.testy.shape}')
 
-            if self.label == "skin-type":
-                # one-hot representation
-                trainy = tf.keras.utils.to_categorical(self.trainy - 1)
-                testy = tf.keras.utils.to_categorical(self.testy - 1)
+        if self.label == "skin-type":
+            # one-hot representation
+            trainy = tf.keras.utils.to_categorical(self.trainy - 1)
+            testy = tf.keras.utils.to_categorical(self.testy - 1)
 
-            elif self.label == 'age':
-                trainy = self.trainy
-                testy = self.testy
+        elif self.label == 'gender':
+            # one-hot representation
+            trainy = tf.keras.utils.to_categorical(self.trainy)
+            testy = tf.keras.utils.to_categorical(self.testy)
 
-        elif self.model_type == 'late-fusion':
-            print(f'trainX.shape: {self.trainX.shape}, trainy.shape: {self.trainy.shape}')
-            print(f'testX.shape: {self.testX.shape}, testy.shape: {self.testy.shape}')
+        elif self.label == 'age':
+            trainy = self.trainy
+            testy = self.testy
 
-            if self.label == "skin-type":
-                # one-hot representation
-                trainy = tf.keras.utils.to_categorical(self.trainy - 1)
-                testy = tf.keras.utils.to_categorical(self.testy - 1)
-
-            elif self.label == 'gender':
-                # one-hot representation
-                trainy = tf.keras.utils.to_categorical(self.trainy)
-                testy = tf.keras.utils.to_categorical(self.testy)
-
-            elif self.label == 'age':
-                trainy = self.trainy
-                testy = self.testy
-
-            print(f'trainX_ds.shape: {self.trainX.shape}, trainy_ds.shape: {trainy.shape}')
-            print(f'testX_ds.shape: {self.testX.shape}, testy_ds.shape: {testy.shape}')
+        print(f'trainX_ds.shape: {self.trainX.shape}, trainy_ds.shape: {trainy.shape}')
+        print(f'testX_ds.shape: {self.testX.shape}, testy_ds.shape: {testy.shape}')
         train_ds = tf.data.Dataset.from_tensor_slices((self.trainX, trainy))
         test_ds = tf.data.Dataset.from_tensor_slices((self.testX, testy))
         if shuffle:
@@ -284,8 +268,7 @@ class MenowModel():
                           metrics=metrics)
         elif self.label == 'age':
             model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
-                          loss=tf.keras.losses.MeanAbsoluteError(),
-                          metrics=['mean_absolute_error'])
+                          loss=tf.keras.losses.MeanAbsoluteError())
 
         return model
 
@@ -298,7 +281,10 @@ class MenowModel():
             weights_dict = {}
             for label in count_dict.keys():
                 n_classes = len(count_dict.keys())
-                weights_dict[int(label) - 1] = (n_samples / (n_classes * count_dict[label]))
+                if self.label == 'skin-type':
+                    weights_dict[int(label) - 1] = (n_samples / (n_classes * count_dict[label]))
+                elif self.label == 'gender':
+                    weights_dict[int(label)] = (n_samples / (n_classes * count_dict[label]))
             return weights_dict
 
         count_dict = self.train_lable_dist()
@@ -306,18 +292,31 @@ class MenowModel():
             class_weights = generate_class_weights(count_dict)
             print(class_weights)
 
-        early_stopping = tf.keras.callbacks.EarlyStopping(
-            monitor='per_loss',
-            verbose=1,
-            patience=10,
-            mode='max',
-            restore_best_weights=True)
+        # Callback to stop training when a monitored metric has stopped improving.
+        if self.label == 'skin-type' or self.label == 'gender':
+            early_stopping = tf.keras.callbacks.EarlyStopping(
+                monitor='val_loss',
+                verbose=1,
+                patience=10,
+                mode='min',
+                restore_best_weights=True)
+        elif self.label == 'age':
+            early_stopping = tf.keras.callbacks.EarlyStopping(
+                monitor='val_loss',
+                verbose=1,
+                patience=20,
+                mode='min',
+                restore_best_weights=True)
+
+
+        # Callback to Enable visualizations for TensorBoard.
+        tensorBoard = tf.keras.callbacks.TensorBoard(log_dir="logs/", histogram_freq=1)
 
         if self.imbalance == 'class_weights':
             history = model.fit(
                 train_ds,
                 epochs=EPOCHS,
-                callbacks=[early_stopping],
+                callbacks=[early_stopping, tensorBoard],
                 validation_data=val_ds,
                 class_weight=class_weights)
 
@@ -325,36 +324,37 @@ class MenowModel():
             history = model.fit(
                 train_ds,
                 epochs=EPOCHS,
-                callbacks=[early_stopping],
+                callbacks=[early_stopping, tensorBoard],
                 validation_data=val_ds)
 
         # Produce plots of the model's loss on the training and validation set (useful to check for overfitting)
         if show_plots == True:
+            loss = history.history['loss']
+            val_loss = history.history['val_loss']
             if self.label == 'skin-type' or self.label == 'gender':
                 acc = history.history['accuracy']
                 val_acc = history.history['val_accuracy']
-            elif self.label == 'age':
-                acc = history.history['mean_absolute_error']
-                val_acc = history.history['val_mean_absolute_error']
-            loss = history.history['loss']
-            val_loss = history.history['val_loss']
-            epochs_range = range(len(acc))
-            plt.figure(figsize=(8, 8))
-            plt.subplot(1, 2, 1)
-            if self.label == 'skin-type' or self.label == 'gender':
+                epochs_range = range(len(acc))
+                plt.figure(figsize=(8, 8))
+                plt.subplot(1, 2, 1)
                 plt.plot(epochs_range, acc, label='Training Accuracy')
                 plt.plot(epochs_range, val_acc, label='Validation Accuracy')
+                plt.legend(loc='lower right')
+                plt.title('Training and Validation Accuracy')
+                plt.subplot(1, 2, 2)
+                plt.plot(epochs_range, loss, label='Training Loss')
+                plt.plot(epochs_range, val_loss, label='Validation Loss')
+                plt.legend(loc='upper right')
+                plt.title('Training and Validation Loss')
+                plt.show()
             elif self.label == 'age':
-                plt.plot(epochs_range, acc, label='Training MAE')
-                plt.plot(epochs_range, val_acc, label='Validation MAE')
-            plt.legend(loc='lower right')
-            plt.title('Training and Validation Accuracy')
-            plt.subplot(1, 2, 2)
-            plt.plot(epochs_range, loss, label='Training Loss')
-            plt.plot(epochs_range, val_loss, label='Validation Loss')
-            plt.legend(loc='upper right')
-            plt.title('Training and Validation Loss')
-            plt.show()
+                epochs_range = range(len(loss))
+                plt.plot(epochs_range, loss, label='Training MAE')
+                plt.plot(epochs_range, val_loss, label='Validation MAE')
+                plt.legend(loc='upper right')
+                plt.title('Training and Validation Loss')
+                plt.show()
+
 
         return history
 
@@ -401,15 +401,21 @@ class MenowModel():
             eval = model.evaluate(val_ds)
             print(eval)
             # check the error distribution
+            # error = y_preds - y_true
+            # sns.displot(data=error, kind="kde")
+            # plt.show()
+
             error = y_preds - y_true
-            sns.displot(data=error, kind="kde")
-            plt.show()
+            plt.hist(error, bins=25)
+            plt.xlabel('Prediction Error [MPG]')
+            plt.ylabel('Count')
 
 
 
 
 #skintype_singleframe_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='skin-type', model_type='single-frame')
 #skintype_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='skin-type', model_type='late-fusion')
+#gender_singleframe_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='gender', model_type='single-frame')
 #gender_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='gender', model_type='late-fusion')
 age_singleframe_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='age', model_type='single-frame')
 #age_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='age', model_type='late-fusion')
@@ -438,7 +444,7 @@ METRICS = [
 ]
 
 # Model summary
-model = age_singleframe_model.make_model()   # metrics=METRICS
+model = age_singleframe_model.make_model(learning_rate=1e-4)   # metrics=METRICS
 print(model.summary())
 
 age_singleframe_model.fit(model, train_ds, val_ds)
