@@ -1,3 +1,6 @@
+from datetime import datetime
+import itertools
+import io
 
 import tensorflow as tf
 import os
@@ -41,7 +44,7 @@ y shape:   (vidslable, imgs)
 class MenowModel():
 
 
-    def __init__(self, trainX, trainy, testX, testy, label='skin-type', model_type='late-fusion', imbalance='None'):
+    def __init__(self, trainX, trainy, testX, testy, label='skin-type', model_type='late-fusion', imbalance='oversample'):
 
         # sanity check
         assert len(trainX)==len(trainy) and len(testX)==len(testy), "size of X and y have to be the same"
@@ -130,6 +133,9 @@ class MenowModel():
         unique = np.unique(self.trainy)
         self.num_classes = len(unique)
         print(f"num of classes: {self.num_classes}")
+
+        if self.label == 'skin-type':
+            self.class_names = ['Type I', 'Type II', 'Type III', 'Type IV', 'Type V', 'Type VI']
 
 
     # Examine the class label imbalance
@@ -273,8 +279,55 @@ class MenowModel():
         return model
 
 
+    # function that converts matplotlib plot a PNG image (for cm_callback)
+    def _plot_to_image(self, figure):
+        """Converts the matplotlib plot specified by 'figure' to a PNG image and
+        returns it. The supplied figure is closed and inaccessible after this call."""
+        # Save the plot to a PNG in memory.
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png')
+        # Closing the figure prevents it from being displayed directly inside
+        # the notebook.
+        plt.close(figure)
+        buf.seek(0)
+        # Convert PNG buffer to TF image
+        image = tf.image.decode_png(buf.getvalue(), channels=4)
+        # Add the batch dimension
+        image = tf.expand_dims(image, 0)
+        return image
+
+
+    # function that calculates the confusion matrix (for cm_callback)
+    def _plot_confusion_matrix(self, cm, class_names):
+        """
+        Returns a matplotlib figure containing the plotted confusion matrix.
+
+        Args:
+          cm (array, shape = [n, n]): a confusion matrix of integer classes
+          class_names (array, shape = [n]): String names of the integer classes
+        """
+        figure = plt.figure(figsize=(8, 8))
+        plt.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
+        plt.title("Confusion matrix")
+        plt.colorbar()
+        tick_marks = np.arange(len(class_names))
+        plt.xticks(tick_marks, class_names, rotation=45)
+        plt.yticks(tick_marks, class_names)
+        # Compute the labels from the normalized confusion matrix.
+        labels = np.around(cm.astype('float') / cm.sum(axis=1)[:, np.newaxis], decimals=2)
+        # Use white text if squares are dark; otherwise black.
+        threshold = cm.max() / 2.
+        for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
+            color = "white" if cm[i, j] > threshold else "black"
+            plt.text(j, i, labels[i, j], horizontalalignment="center", color=color)
+        plt.tight_layout()
+        plt.ylabel('True label')
+        plt.xlabel('Predicted label')
+        return figure
+
+
     # train the model
-    def fit(self, model, train_ds, val_ds, EPOCHS=90, show_plots=True):
+    def fit(self, model, train_ds, val_ds, NAME, EPOCHS=90, show_plots=True):
 
         def generate_class_weights(count_dict):
             n_samples = sum(list(count_dict.values()))
@@ -293,30 +346,46 @@ class MenowModel():
             print(class_weights)
 
         # Callback to stop training when a monitored metric has stopped improving.
-        if self.label == 'skin-type' or self.label == 'gender':
-            early_stopping = tf.keras.callbacks.EarlyStopping(
-                monitor='val_loss',
-                verbose=1,
-                patience=10,
-                mode='min',
-                restore_best_weights=True)
-        elif self.label == 'age':
-            early_stopping = tf.keras.callbacks.EarlyStopping(
-                monitor='val_loss',
-                verbose=1,
-                patience=20,
-                mode='min',
-                restore_best_weights=True)
+        early_stopping = tf.keras.callbacks.EarlyStopping(
+            monitor='val_loss',
+            verbose=1,
+            patience=10,
+            mode='min',
+            restore_best_weights=True)
 
+        logdir = 'logs_bs_lr1/{}'.format(NAME) + "/image/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+        # Define the basic TensorBoard callback.
+        tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=logdir, histogram_freq=1)
+        file_writer_cm = tf.summary.create_file_writer(logdir + '/cm')
 
-        # Callback to Enable visualizations for TensorBoard.
-        tensorBoard = tf.keras.callbacks.TensorBoard(log_dir="logs/", histogram_freq=1)
+        class_names = self.class_names
+        def log_confusion_matrix(epoch, logs):
+            # Use the model to predict the values from the validation dataset
+            y_preds = model.predict(val_ds)
+            y_true = self.testy
+            if self.label == "skin-type":
+                y_true = tf.keras.utils.to_categorical(y_true - 1)
+            elif self.label == "gender":
+                y_true = tf.keras.utils.to_categorical(y_true)
+            if self.label == 'skin-type' or self.label == 'gender':
+                y_true, y_preds = np.argmax(y_true, axis=1), np.argmax(y_preds, axis=1)
+            # Calculate the confusion matrix
+            cm = confusion_matrix(y_true, y_preds)
+            # Log the confusion matrix as an image summary
+            figure = self._plot_confusion_matrix(cm, class_names=class_names)
+            cm_image = self._plot_to_image(figure)
+            # Log the confusion matrix as an image summary
+            with file_writer_cm.as_default():
+                tf.summary.image("Confusion Matrix", cm_image, step=epoch)
+
+        # Define the per-epoch callback
+        cm_callback = tf.keras.callbacks.LambdaCallback(on_epoch_end=log_confusion_matrix)
 
         if self.imbalance == 'class_weights':
             history = model.fit(
                 train_ds,
                 epochs=EPOCHS,
-                callbacks=[early_stopping, tensorBoard],
+                callbacks=[early_stopping, tensorboard_callback, cm_callback],
                 validation_data=val_ds,
                 class_weight=class_weights)
 
@@ -324,7 +393,7 @@ class MenowModel():
             history = model.fit(
                 train_ds,
                 epochs=EPOCHS,
-                callbacks=[early_stopping, tensorBoard],
+                callbacks=[early_stopping, tensorboard_callback, cm_callback],
                 validation_data=val_ds)
 
         # Produce plots of the model's loss on the training and validation set (useful to check for overfitting)
@@ -355,11 +424,10 @@ class MenowModel():
                 plt.title('Training and Validation Loss')
                 plt.show()
 
-
         return history
 
 
-    def evaluate(self, model):
+    def evaluate(self, model, plot_cm=True):
 
         y_preds = model.predict(val_ds)
         y_true = self.testy
@@ -390,14 +458,20 @@ class MenowModel():
             print(f'true_y shape: {y_true.shape}')
             print(f'pred_y shape: {y_preds.shape}')
 
-            conf_mat = confusion_matrix(y_true, y_preds)
-            fig, ax = plt.subplots(figsize=(8, 6))
-            sns.heatmap(conf_mat, annot=True, fmt='d')
-            plt.ylabel('Actual')
-            plt.xlabel('Predicted')
-            plt.show()
+            if plot_cm == True:
+                conf_mat = confusion_matrix(y_true, y_preds)
+                fig, ax = plt.subplots(figsize=(8, 6))
+                sns.heatmap(conf_mat, annot=True, fmt='d')
+                plt.ylabel('Actual')
+                plt.xlabel('Predicted')
+                plt.show()
 
         elif self.label == 'age':
+            print(y_true)
+            print(type(y_true), y_true.shape)
+            print(y_preds)
+            print(type(y_preds), y_preds.shape)
+
             eval = model.evaluate(val_ds)
             print(eval)
             # check the error distribution
@@ -414,42 +488,46 @@ class MenowModel():
 
 
 #skintype_singleframe_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='skin-type', model_type='single-frame')
-#skintype_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='skin-type', model_type='late-fusion')
+skintype_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='skin-type', model_type='late-fusion')
 #gender_singleframe_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='gender', model_type='single-frame')
 #gender_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='gender', model_type='late-fusion')
-age_singleframe_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='age', model_type='single-frame')
+#age_singleframe_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='age', model_type='single-frame')
 #age_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='age', model_type='late-fusion')
 
 
 
-#Checking the format of the data the df_to_dataset function returns
-train_ds, val_ds = age_singleframe_model.create_datasets()
-[(embedding_batch, label_batch)] = train_ds.take(1)
-print('embedding batch shape:', embedding_batch.shape)
-print('label batch shape:', label_batch.shape)
-print(len(val_ds))
+# #Checking the format of the data the df_to_dataset function returns
+# train_ds, val_ds = skintype_latefusion_model.create_datasets()
+# [(embedding_batch, label_batch)] = train_ds.take(1)
+# print('embedding batch shape:', embedding_batch.shape)
+# print('label batch shape:', label_batch.shape)
+# print(len(val_ds))
 
-# Create, compile, and train the model
-# define the metrics
-METRICS = [
-    tf.keras.metrics.TruePositives(name='tp'),
-    tf.keras.metrics.FalsePositives(name='fp'),
-    tf.keras.metrics.TrueNegatives(name='tn'),
-    tf.keras.metrics.FalseNegatives(name='fn'),
-    tf.keras.metrics.BinaryAccuracy(name='accuracy'),
-    tf.keras.metrics.Precision(name='precision'),
-    tf.keras.metrics.Recall(name='recall'),
-    tf.keras.metrics.AUC(name='auc'),
-    tf.keras.metrics.AUC(name='prc', curve='PR'),  # precision-recall curve
-]
+# # Create, compile, and train the model
+# # define the metrics
+# METRICS = [
+#     tf.keras.metrics.TruePositives(name='tp'),
+#     tf.keras.metrics.FalsePositives(name='fp'),
+#     tf.keras.metrics.TrueNegatives(name='tn'),
+#     tf.keras.metrics.FalseNegatives(name='fn'),
+#     tf.keras.metrics.BinaryAccuracy(name='accuracy'),
+#     tf.keras.metrics.Precision(name='precision'),
+#     tf.keras.metrics.Recall(name='recall'),
+#     tf.keras.metrics.AUC(name='auc'),
+#     tf.keras.metrics.AUC(name='prc', curve='PR'),  # precision-recall curve
+# ]
 
-# Model summary
-model = age_singleframe_model.make_model(learning_rate=1e-4)   # metrics=METRICS
-print(model.summary())
 
-age_singleframe_model.fit(model, train_ds, val_ds)
+for bs in [32,64,128]:
+    for lr in [1e-2,1e-3,1e-4,1e-5]:
+        train_ds, val_ds = skintype_latefusion_model.create_datasets(batch_size=32)
 
-age_singleframe_model.evaluate(model)
+        model = skintype_latefusion_model.make_model(learning_rate=lr)   # metrics=METRICS
+        print(model.summary())
+
+        skintype_latefusion_model.fit(model, train_ds, val_ds, NAME=str(bs)+"_"+str(lr), show_plots=False)
+
+        skintype_latefusion_model.evaluate(model, plot_cm=False)
 
 
 
