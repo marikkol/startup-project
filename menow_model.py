@@ -44,7 +44,7 @@ y shape:   (vidslable, imgs)
 class MenowModel():
 
 
-    def __init__(self, trainX, trainy, testX, testy, label='skin-type', model_type='late-fusion', imbalance='oversample'):
+    def __init__(self, trainX, trainy, testX, testy, label='skin-type', model_type='late-fusion', imbalance='None'):
 
         # sanity check
         assert len(trainX)==len(trainy) and len(testX)==len(testy), "size of X and y have to be the same"
@@ -59,10 +59,10 @@ class MenowModel():
         if self.model_type == 'single-frame':
             self.trainX, self.testX = trainX.reshape([-1, 128]), testX.reshape([-1, 128])
             self.trainy, self.testy = trainy.reshape([-1, 1]), testy.reshape([-1, 1])
-            if self.label == 'skin-type':
+            if self.label == 'skin-type' or self.label == 'reg_skin-type':
                 # no missing values
-                self.trainy = np.array([int(xi[self.label]) for xi in self.trainy[:, 0]])
-                self.testy = np.array([int(xi[self.label]) for xi in self.testy[:, 0]])
+                self.trainy = np.array([int(xi['skin-type']) for xi in self.trainy[:, 0]])
+                self.testy = np.array([int(xi['skin-type']) for xi in self.testy[:, 0]])
                 if self.imbalance == 'oversample':
                     oversample = SMOTE()
                     self.trainX, self.trainy = oversample.fit_resample(self.trainX, self.trainy)
@@ -95,10 +95,10 @@ class MenowModel():
             self.trainX, self.testX = trainX.reshape([-1, 128 * num_frames_per_vid]), testX.reshape(
                 [-1, 128 * num_frames_per_vid])
             self.trainy, self.testy = trainy[:, 0], testy[:, 0]
-            if self.label == 'skin-type':
+            if self.label == 'skin-type' or self.label == 'reg_skin-type':
                 # no missing values
-                self.trainy = np.array([int(xi[self.label]) for xi in self.trainy])
-                self.testy = np.array([int(xi[self.label]) for xi in self.testy])
+                self.trainy = np.array([int(xi['skin-type']) for xi in self.trainy])
+                self.testy = np.array([int(xi['skin-type']) for xi in self.testy])
                 if imbalance == 'oversample':
                     oversample = SMOTE()
                     self.trainX, self.trainy = oversample.fit_resample(self.trainX, self.trainy)
@@ -134,13 +134,17 @@ class MenowModel():
         self.num_classes = len(unique)
         print(f"num of classes: {self.num_classes}")
 
-        if self.label == 'skin-type':
+        if self.label == 'skin-type' or self.label == 'reg_skin-type':
             self.class_names = ['Type I', 'Type II', 'Type III', 'Type IV', 'Type V', 'Type VI']
+        elif self.label == 'gender':
+            self.class_names = ['Male', 'Female']
+        elif self.label == 'age':
+            self.class_names = list(np.unique(self.trainy))
 
 
     # Examine the class label imbalance
     def train_lable_dist(self, show_dis=False):
-        if self.label == 'skin-type' or self.label == 'gender':
+        if self.label == 'skin-type' or self.label == 'reg_skin-type' or self.label == 'gender':
             unique = np.unique(self.trainy)
             bincount = np.bincount(self.trainy)
             total = bincount.sum()
@@ -148,8 +152,7 @@ class MenowModel():
             print(f'    Total: {total}')
             count_dict = {}
             for label in unique:
-                print(
-                    f'    type' + str(label) + f': {bincount[label]} ({(100 * bincount[label] / total):.2f}% of total)')
+                print(f'    type' + str(label) + f': {bincount[label]} ({(100 * bincount[label] / total):.2f}% of total)')
                 count_dict[str(label)] = bincount[label]
             return count_dict
 
@@ -175,7 +178,7 @@ class MenowModel():
             trainy = tf.keras.utils.to_categorical(self.trainy)
             testy = tf.keras.utils.to_categorical(self.testy)
 
-        elif self.label == 'age':
+        elif self.label == 'age' or self.label == 'reg_skin-type':
             trainy = self.trainy
             testy = self.testy
 
@@ -197,76 +200,91 @@ class MenowModel():
     def make_model(self, learning_rate=1e-5, metrics=['accuracy']):
 
         if self.model_type == 'single-frame':
-            if self.label == 'skin-type':
-                embedding_input = tf.keras.Input(shape=(128,), name='embedding_input')
-                x = tf.keras.layers.LayerNormalization(axis=1)(embedding_input)
-                x = tf.keras.layers.Dense(60, activation="relu")(x)
-                # x = tf.keras.layers.Dropout(0.5)(x)
-                # x = tf.keras.layers.LayerNormalization(axis=1)(embedding_input)
-                # x = tf.keras.layers.Dense(64, activation="relu")(x)
-                # x = tf.keras.layers.Dropout(0.5)(x)
-                x = tf.keras.layers.Dense(self.num_classes)(x)
-                output = tf.nn.softmax(x)
-                model = tf.keras.Model(embedding_input, output)
-
-            elif self.label == 'gender':
-                embedding_input = tf.keras.Input(shape=(128,), name='embedding_input')
-                x = tf.keras.layers.LayerNormalization(axis=1)(embedding_input)
-                x = tf.keras.layers.Dense(60, activation="relu")(x)
-                x = tf.keras.layers.Dropout(0.5)(x)
-                # x = tf.keras.layers.LayerNormalization(axis=1)(embedding_input)
-                # x = tf.keras.layers.Dense(64, activation="relu")(x)
-                # x = tf.keras.layers.Dropout(0.5)(x)
-                x = tf.keras.layers.Dense(self.num_classes)(x)
-                output = tf.nn.softmax(x)
-                model = tf.keras.Model(embedding_input, output)
-
-            elif self.label == 'age':
-                embedding_input = tf.keras.Input(shape=(128,), name='embedding_input')
-                x = tf.keras.layers.LayerNormalization(axis=1)(embedding_input)
-                x = tf.keras.layers.Dense(60, activation="relu")(x)
-                x = tf.keras.layers.Dropout(0.5)(x)
-                x = tf.keras.layers.LayerNormalization(axis=1)(x)
-                x = tf.keras.layers.Dense(64, activation="relu")(x)
-                # x = tf.keras.layers.Dropout(0.5)(x)
-                output = tf.keras.layers.Dense(1)(x)
-                model = tf.keras.Model(embedding_input, output)
-
+            input_shape  = 128
         elif self.model_type == 'late-fusion':
-            if self.label == 'skin-type':
-                embedding_input = tf.keras.Input(shape=(128 * 5,), name='embedding_input')
-                x = tf.keras.layers.LayerNormalization(axis=1)(embedding_input)
-                x = tf.keras.layers.Dense(60, activation="relu")(x)
-                x = tf.keras.layers.Dropout(0.5)(x)
-                # x = tf.keras.layers.LayerNormalization(axis=1)(embedding_input)
-                # x = tf.keras.layers.Dense(64, activation="relu")(x)
-                # x = tf.keras.layers.Dropout(0.5)(x)
-                x = tf.keras.layers.Dense(self.num_classes)(x)
-                output = tf.nn.softmax(x)
-                model = tf.keras.Model(embedding_input, output)
+            input_shape = 128 * 5
 
-            elif self.label == 'gender':
-                embedding_input = tf.keras.Input(shape=(128 * 5,), name='embedding_input')
-                x = tf.keras.layers.LayerNormalization(axis=1)(embedding_input)
-                x = tf.keras.layers.Dense(60, activation="relu")(x)
-                x = tf.keras.layers.Dropout(0.5)(x)
-                # x = tf.keras.layers.LayerNormalization(axis=1)(embedding_input)
-                # x = tf.keras.layers.Dense(64, activation="relu")(x)
-                # x = tf.keras.layers.Dropout(0.5)(x)
-                x = tf.keras.layers.Dense(self.num_classes)(x)
-                output = tf.nn.softmax(x)
-                model = tf.keras.Model(embedding_input, output)
+        if self.label == 'skin-type':
+            embedding_input = tf.keras.Input(shape=(input_shape,), name='embedding_input')
+            x = tf.keras.layers.BatchNormalization(axis=1)(embedding_input)
+            x = tf.keras.layers.Dense(128, activation="relu")(x)
+            x = tf.keras.layers.Dropout(0.5)(x)
+            x = tf.keras.layers.BatchNormalization(axis=1)(embedding_input)
+            x = tf.keras.layers.Dense(128, activation="relu")(x)
+            x = tf.keras.layers.BatchNormalization(axis=1)(embedding_input)
+            x = tf.keras.layers.Dense(64, activation="relu")(x)
+            x = tf.keras.layers.BatchNormalization(axis=1)(embedding_input)
+            x = tf.keras.layers.Dense(64, activation="relu")(x)
+            # x = tf.keras.layers.Dropout(0.5)(x)
+            x = tf.keras.layers.Dense(self.num_classes)(x)
+            output = tf.nn.softmax(x)
+            model = tf.keras.Model(embedding_input, output)
 
-            elif self.label == 'age':
-                embedding_input = tf.keras.Input(shape=(128 * 5,), name='embedding_input')
-                x = tf.keras.layers.LayerNormalization(axis=1)(embedding_input)
-                x = tf.keras.layers.Dense(60, activation="relu")(x)
-                x = tf.keras.layers.Dropout(0.5)(x)
-                x = tf.keras.layers.LayerNormalization(axis=1)(x)
-                x = tf.keras.layers.Dense(64, activation="relu")(x)
-                # x = tf.keras.layers.Dropout(0.5)(x)
-                output = tf.keras.layers.Dense(1)(x)
-                model = tf.keras.Model(embedding_input, output)
+        elif self.label == 'gender':
+            embedding_input = tf.keras.Input(shape=(input_shape,), name='embedding_input')
+            x = tf.keras.layers.BatchNormalization()(embedding_input)
+            x = tf.keras.layers.Dense(60, activation="relu")(x)
+            x = tf.keras.layers.Dropout(0.5)(x)
+            x = tf.keras.layers.Dense(self.num_classes)(x)
+            output = tf.nn.softmax(x)
+            model = tf.keras.Model(embedding_input, output)
+
+        elif self.label == 'age':
+            embedding_input = tf.keras.Input(shape=(input_shape,), name='embedding_input')
+            x = tf.keras.layers.BatchNormalization(axis=1)(embedding_input)
+            x = tf.keras.layers.Dense(128*2, activation="relu")(x)
+            #x = tf.keras.layers.Dropout(0.5)(x)
+            x = tf.keras.layers.BatchNormalization(axis=1)(x)
+            x = tf.keras.layers.Dense(128*2, activation="relu")(x)
+            x = tf.keras.layers.Dropout(0.5)(x)
+            x = tf.keras.layers.BatchNormalization(axis=1)(x)
+            x = tf.keras.layers.Dense(128, activation="relu")(x)
+            x = tf.keras.layers.BatchNormalization(axis=1)(x)
+            x = tf.keras.layers.Dense(128, activation="relu")(x)
+            x = tf.keras.layers.Dropout(0.5)(x)
+            x = tf.keras.layers.BatchNormalization(axis=1)(x)
+            x = tf.keras.layers.Dense(64, activation="relu")(x)
+            x = tf.keras.layers.BatchNormalization(axis=1)(x)
+            x = tf.keras.layers.Dense(64, activation="relu")(x)
+            x = tf.keras.layers.Dropout(0.5)(x)
+            x = tf.keras.layers.BatchNormalization(axis=1)(x)
+            x = tf.keras.layers.Dense(64, activation="relu")(x)
+            x = tf.keras.layers.BatchNormalization(axis=1)(x)
+            x = tf.keras.layers.Dense(64, activation="relu")(x)
+            #x = tf.keras.layers.Dropout(0.5)(x)
+            output = tf.keras.layers.Dense(1)(x)
+            model = tf.keras.Model(embedding_input, output)
+
+            # embedding_input = tf.keras.Input(shape=(input_shape,), name='embedding_input')
+            # x = tf.keras.layers.LayerNormalization(axis=1)(embedding_input)
+            # x = tf.keras.layers.Dense(60, activation="relu")(x)
+            # x = tf.keras.layers.Dropout(0.5)(x)
+            # x = tf.keras.layers.LayerNormalization(axis=1)(x)
+            # x = tf.keras.layers.Dense(64, activation="relu")(x)
+            # # x = tf.keras.layers.Dropout(0.5)(x)
+            # output = tf.keras.layers.Dense(1)(x)
+            # model = tf.keras.Model(embedding_input, output)
+
+        elif self.label == 'reg_skin-type':
+            embedding_input = tf.keras.Input(shape=(input_shape,), name='embedding_input')
+            x = tf.keras.layers.BatchNormalization(axis=1)(embedding_input)
+            x = tf.keras.layers.Dense(128*2, activation="relu")(x)
+            #x = tf.keras.layers.Dropout(0.5)(x)
+            x = tf.keras.layers.BatchNormalization(axis=1)(x)
+            x = tf.keras.layers.Dense(128*2, activation="relu")(x)
+            x = tf.keras.layers.Dropout(0.5)(x)
+            x = tf.keras.layers.BatchNormalization(axis=1)(x)
+            x = tf.keras.layers.Dense(128, activation="relu")(x)
+            x = tf.keras.layers.BatchNormalization(axis=1)(x)
+            x = tf.keras.layers.Dense(128, activation="relu")(x)
+            x = tf.keras.layers.Dropout(0.5)(x)
+            x = tf.keras.layers.BatchNormalization(axis=1)(x)
+            x = tf.keras.layers.Dense(64, activation="relu")(x)
+            x = tf.keras.layers.BatchNormalization(axis=1)(x)
+            x = tf.keras.layers.Dense(64, activation="relu")(x)
+            #x = tf.keras.layers.Dropout(0.5)(x)
+            output = tf.keras.layers.Dense(1)(x)
+            model = tf.keras.Model(embedding_input, output)
 
         if self.label == 'skin-type' or self.label == 'gender':
             model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
@@ -275,6 +293,10 @@ class MenowModel():
         elif self.label == 'age':
             model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
                           loss=tf.keras.losses.MeanAbsoluteError())
+        elif self.label == 'reg_skin-type':
+            model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+                          loss=tf.keras.losses.MeanAbsoluteError(),
+                          metrics=[NeighborsAccuracy(),TrueAccuracy()])
 
         return model
 
@@ -286,8 +308,7 @@ class MenowModel():
         # Save the plot to a PNG in memory.
         buf = io.BytesIO()
         plt.savefig(buf, format='png')
-        # Closing the figure prevents it from being displayed directly inside
-        # the notebook.
+        # Closing the figure prevents it from being displayed directly inside the notebook.
         plt.close(figure)
         buf.seek(0)
         # Convert PNG buffer to TF image
@@ -306,7 +327,10 @@ class MenowModel():
           cm (array, shape = [n, n]): a confusion matrix of integer classes
           class_names (array, shape = [n]): String names of the integer classes
         """
-        figure = plt.figure(figsize=(8, 8))
+        if self.label == 'age':
+            figure = plt.figure(figsize=(15, 15))
+        else:
+            figure = plt.figure(figsize=(8, 8))
         plt.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
         plt.title("Confusion matrix")
         plt.colorbar()
@@ -315,7 +339,7 @@ class MenowModel():
         plt.yticks(tick_marks, class_names)
         # Compute the labels from the normalized confusion matrix.
         labels = np.around(cm.astype('float') / cm.sum(axis=1)[:, np.newaxis], decimals=2)
-        # Use white text if squares are dark; otherwise black.
+        # Use white text if squares are dark, otherwise black.
         threshold = cm.max() / 2.
         for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
             color = "white" if cm[i, j] > threshold else "black"
@@ -327,7 +351,7 @@ class MenowModel():
 
 
     # train the model
-    def fit(self, model, train_ds, val_ds, NAME, EPOCHS=90, show_plots=True):
+    def fit(self, model, train_ds, val_ds, NAME, EPOCHS=150, show_plots=True):
 
         def generate_class_weights(count_dict):
             n_samples = sum(list(count_dict.values()))
@@ -349,11 +373,11 @@ class MenowModel():
         early_stopping = tf.keras.callbacks.EarlyStopping(
             monitor='val_loss',
             verbose=1,
-            patience=10,
+            patience=20,
             mode='min',
             restore_best_weights=True)
 
-        logdir = 'logs_bs_lr1/{}'.format(NAME) + "/image/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+        logdir = 'logs_bs_lr_age2/{}'.format(NAME) + "/image/" + datetime.now().strftime("%Y%m%d-%H%M%S")
         # Define the basic TensorBoard callback.
         tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=logdir, histogram_freq=1)
         file_writer_cm = tf.summary.create_file_writer(logdir + '/cm')
@@ -369,6 +393,8 @@ class MenowModel():
                 y_true = tf.keras.utils.to_categorical(y_true)
             if self.label == 'skin-type' or self.label == 'gender':
                 y_true, y_preds = np.argmax(y_true, axis=1), np.argmax(y_preds, axis=1)
+            elif self.label == 'reg_skin-type' or self.label == 'age':
+                y_preds = np.around(y_preds)
             # Calculate the confusion matrix
             cm = confusion_matrix(y_true, y_preds)
             # Log the confusion matrix as an image summary
@@ -430,15 +456,22 @@ class MenowModel():
     def evaluate(self, model, plot_cm=True):
 
         y_preds = model.predict(val_ds)
-        y_true = self.testy
-        if self.label == "skin-type":
+        y_true = self.testy.copy()
+        if self.label == "skin-type" :
             y_true = tf.keras.utils.to_categorical(y_true - 1)
         elif self.label == "gender":
             y_true = tf.keras.utils.to_categorical(y_true)
 
         if self.label == 'skin-type' or self.label == 'gender':
             y_true, y_preds = np.argmax(y_true, axis=1), np.argmax(y_preds, axis=1)
+        elif self.label == 'reg_skin-type':
+            y_preds = np.around(y_preds)
+            y_preds -= 1
+            y_true -= 1
+            print(np.unique(y_preds))
+            print(np.unique(y_true))
 
+        if self.label != 'age':
             accuracy = accuracy_score(y_true, y_preds)
             precision = precision_score(y_true, y_preds, average='micro')
             recall = recall_score(y_true, y_preds, average='micro')
@@ -486,13 +519,64 @@ class MenowModel():
 
 
 
+class NeighborsAccuracy(tf.keras.metrics.Metric):
+
+    def __init__(self, name='neighbors_accuracy', **kwargs):
+        super(NeighborsAccuracy, self).__init__(name=name, **kwargs)
+        self.n_accuracy = self.add_weight(name='na', initializer='zeros')
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        y_pred = tf.round(y_pred)
+        y_pred = tf.cast(y_pred, tf.int32)
+        y_true = tf.cast(y_true, tf.int32)
+        y_pred = tf.reshape(y_pred, [-1])
+        y_true = tf.reshape(y_true, [-1])
+
+        correct_predictions = tf.equal(y_true,y_pred)
+        correct_predictions_neigh1 = tf.equal(y_true,y_pred+1)
+        correct_predictions_neigh2= tf.equal(y_true,y_pred-1)
+        values = tf.logical_or(correct_predictions, correct_predictions_neigh1)
+        values = tf.logical_or(values, correct_predictions_neigh2)
+        values = tf.cast(values, tf.int32)
+        accuracy = tf.reduce_sum(values) / len(values)
+        accuracy = tf.cast(accuracy, tf.float32)
+        self.n_accuracy.assign(accuracy)
+
+    def result(self):
+        return self.n_accuracy
+
+
+class TrueAccuracy(tf.keras.metrics.Metric):
+
+    def __init__(self, name='true_accuracy', **kwargs):
+        super(TrueAccuracy, self).__init__(name=name, **kwargs)
+        self.t_accuracy = self.add_weight(name='ta', initializer='zeros')
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        y_pred = tf.round(y_pred)
+        y_pred = tf.cast(y_pred, tf.int32)
+        y_true = tf.cast(y_true, tf.int32)
+        y_pred = tf.reshape(y_pred, [-1])
+        y_true = tf.reshape(y_true, [-1])
+
+        correct_predictions = tf.equal(y_true,y_pred)
+        values = tf.cast(correct_predictions, tf.int32)
+        accuracy = tf.reduce_sum(values) / len(values)
+        accuracy = tf.cast(accuracy, tf.float32)
+        self.t_accuracy.assign(accuracy)
+
+    def result(self):
+        return self.t_accuracy
+
 
 #skintype_singleframe_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='skin-type', model_type='single-frame')
-skintype_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='skin-type', model_type='late-fusion')
+#skintype_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='skin-type', model_type='late-fusion')
 #gender_singleframe_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='gender', model_type='single-frame')
 #gender_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='gender', model_type='late-fusion')
 #age_singleframe_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='age', model_type='single-frame')
 #age_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='age', model_type='late-fusion')
+reg_skintype_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='reg_skin-type', model_type='late-fusion')
+
 
 
 
@@ -520,14 +604,14 @@ skintype_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_
 
 for bs in [32,64,128]:
     for lr in [1e-2,1e-3,1e-4,1e-5]:
-        train_ds, val_ds = skintype_latefusion_model.create_datasets(batch_size=32)
+        train_ds, val_ds = reg_skintype_latefusion_model.create_datasets(batch_size=bs)
 
-        model = skintype_latefusion_model.make_model(learning_rate=lr)   # metrics=METRICS
+        model = reg_skintype_latefusion_model.make_model(learning_rate=lr)   # metrics=METRICS
         print(model.summary())
 
-        skintype_latefusion_model.fit(model, train_ds, val_ds, NAME=str(bs)+"_"+str(lr), show_plots=False)
+        reg_skintype_latefusion_model.fit(model, train_ds, val_ds, NAME=str(bs)+"_"+str(lr), show_plots=False)
 
-        skintype_latefusion_model.evaluate(model, plot_cm=False)
+        reg_skintype_latefusion_model.evaluate(model, plot_cm=False)
 
 
 
