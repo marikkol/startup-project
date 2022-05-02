@@ -44,7 +44,7 @@ y shape:   (vidslable, imgs)
 class MenowModel():
 
 
-    def __init__(self, trainX, trainy, testX, testy, label='skin-type', model_type='late-fusion', imbalance='None'):
+    def __init__(self, trainX, trainy, testX, testy, label='skin-type', model_type='late-fusion', imbalance='oversample'):
 
         # sanity check
         assert len(trainX)==len(trainy) and len(testX)==len(testy), "size of X and y have to be the same"
@@ -255,15 +255,6 @@ class MenowModel():
             output = tf.keras.layers.Dense(1)(x)
             model = tf.keras.Model(embedding_input, output)
 
-            # embedding_input = tf.keras.Input(shape=(input_shape,), name='embedding_input')
-            # x = tf.keras.layers.LayerNormalization(axis=1)(embedding_input)
-            # x = tf.keras.layers.Dense(60, activation="relu")(x)
-            # x = tf.keras.layers.Dropout(0.5)(x)
-            # x = tf.keras.layers.LayerNormalization(axis=1)(x)
-            # x = tf.keras.layers.Dense(64, activation="relu")(x)
-            # # x = tf.keras.layers.Dropout(0.5)(x)
-            # output = tf.keras.layers.Dense(1)(x)
-            # model = tf.keras.Model(embedding_input, output)
 
         elif self.label == 'reg_skin-type':
             embedding_input = tf.keras.Input(shape=(input_shape,), name='embedding_input')
@@ -377,7 +368,7 @@ class MenowModel():
             mode='min',
             restore_best_weights=True)
 
-        logdir = 'logs_bs_lr_age2/{}'.format(NAME) + "/image/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+        logdir = 'logs_bs_lr_SkinTypeReg/{}'.format(NAME) + "/image/" + datetime.now().strftime("%Y%m%d-%H%M%S")
         # Define the basic TensorBoard callback.
         tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=logdir, histogram_freq=1)
         file_writer_cm = tf.summary.create_file_writer(logdir + '/cm')
@@ -453,10 +444,21 @@ class MenowModel():
         return history
 
 
-    def evaluate(self, model, plot_cm=True):
+    def evaluate(self, model, val_ds, plot_cm=True):
 
         y_preds = model.predict(val_ds)
         y_true = self.testy.copy()
+
+        neighborsaccuracy = NeighborsAccuracy()
+        neighborsaccuracy.update_state(y_true, y_preds)
+        NeighborsAcc_score = neighborsaccuracy.result()
+        print(f"Neighbors Acc: {NeighborsAcc_score * 100:.2f}%")
+
+        trueaccuracy = TrueAccuracy()
+        trueaccuracy.update_state(y_true, y_preds)
+        TrueAcc_score = trueaccuracy.result()
+        print(f"True Acc: {TrueAcc_score * 100:.2f}%")
+
         if self.label == "skin-type" :
             y_true = tf.keras.utils.to_categorical(y_true - 1)
         elif self.label == "gender":
@@ -466,6 +468,7 @@ class MenowModel():
             y_true, y_preds = np.argmax(y_true, axis=1), np.argmax(y_preds, axis=1)
         elif self.label == 'reg_skin-type':
             y_preds = np.around(y_preds)
+            # for the confusion_matrix
             y_preds -= 1
             y_true -= 1
             print(np.unique(y_preds))
@@ -476,10 +479,6 @@ class MenowModel():
             precision = precision_score(y_true, y_preds, average='micro')
             recall = recall_score(y_true, y_preds, average='micro')
             f1 = f1_score(y_true, y_preds, average='micro')
-            metric_dict = {"accuracy": round(accuracy, 2),
-                           "precision": round(precision, 2),
-                           "recall": round(recall, 2),
-                           "f1": round(f1, 2)}
             print(f"Acc: {accuracy * 100:.2f}%")
             print(f"Precision: {precision:.2f}")
             print(f"Recall: {recall:.2f}")
@@ -507,15 +506,14 @@ class MenowModel():
 
             eval = model.evaluate(val_ds)
             print(eval)
-            # check the error distribution
-            # error = y_preds - y_true
-            # sns.displot(data=error, kind="kde")
-            # plt.show()
+            if plot_cm == True:
+                error = y_preds - y_true
+                plt.hist(error, bins=25)
+                plt.xlabel('Prediction Error [MPG]')
+                plt.ylabel('Count')
+                plt.show()
 
-            error = y_preds - y_true
-            plt.hist(error, bins=25)
-            plt.xlabel('Prediction Error [MPG]')
-            plt.ylabel('Count')
+        return TrueAcc_score, NeighborsAcc_score
 
 
 
@@ -569,52 +567,21 @@ class TrueAccuracy(tf.keras.metrics.Metric):
         return self.t_accuracy
 
 
-#skintype_singleframe_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='skin-type', model_type='single-frame')
-#skintype_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='skin-type', model_type='late-fusion')
-#gender_singleframe_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='gender', model_type='single-frame')
-#gender_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='gender', model_type='late-fusion')
-#age_singleframe_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='age', model_type='single-frame')
-#age_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='age', model_type='late-fusion')
-reg_skintype_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='reg_skin-type', model_type='late-fusion')
 
 
+skintype_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='skin-type', model_type='late-fusion')
+skintype_singleframe_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='skin-type', model_type='single-frame')
 
 
-# #Checking the format of the data the df_to_dataset function returns
-# train_ds, val_ds = skintype_latefusion_model.create_datasets()
-# [(embedding_batch, label_batch)] = train_ds.take(1)
-# print('embedding batch shape:', embedding_batch.shape)
-# print('label batch shape:', label_batch.shape)
-# print(len(val_ds))
+#Checking the format of the data the df_to_dataset function returns
+train_ds1, val_ds1 = skintype_latefusion_model.create_datasets()
+[(embedding_batch, label_batch)] = train_ds1.take(1)
+print('embedding batch shape:', embedding_batch.shape)
+print('label batch shape:', label_batch.shape)
 
-# # Create, compile, and train the model
-# # define the metrics
-# METRICS = [
-#     tf.keras.metrics.TruePositives(name='tp'),
-#     tf.keras.metrics.FalsePositives(name='fp'),
-#     tf.keras.metrics.TrueNegatives(name='tn'),
-#     tf.keras.metrics.FalseNegatives(name='fn'),
-#     tf.keras.metrics.BinaryAccuracy(name='accuracy'),
-#     tf.keras.metrics.Precision(name='precision'),
-#     tf.keras.metrics.Recall(name='recall'),
-#     tf.keras.metrics.AUC(name='auc'),
-#     tf.keras.metrics.AUC(name='prc', curve='PR'),  # precision-recall curve
-# ]
-
-
-for bs in [32,64,128]:
-    for lr in [1e-2,1e-3,1e-4,1e-5]:
-        train_ds, val_ds = reg_skintype_latefusion_model.create_datasets(batch_size=bs)
-
-        model = reg_skintype_latefusion_model.make_model(learning_rate=lr)   # metrics=METRICS
-        print(model.summary())
-
-        reg_skintype_latefusion_model.fit(model, train_ds, val_ds, NAME=str(bs)+"_"+str(lr), show_plots=False)
-
-        reg_skintype_latefusion_model.evaluate(model, plot_cm=False)
-
-
-
-
+train_ds2, val_ds2 = skintype_singleframe_model.create_datasets()
+[(embedding_batch, label_batch)] = train_ds1.take(1)
+print('embedding batch shape:', embedding_batch.shape)
+print('label batch shape:', label_batch.shape)
 
 
