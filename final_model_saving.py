@@ -4,7 +4,7 @@ import numpy as np
 import tensorflow as tf
 
 sys.path.append(r'C:\Users\USER1\Desktop\MeNow Project')
-from menow_model import MenowModel, NeighborsAccuracy, TrueAccuracy
+from menow_model import MenowModel
 
 # load dataset
 trainX_arr = np.empty((0,5,128))
@@ -32,45 +32,26 @@ y shape:   (vidslable, imgs)
 """
 
 
-# k-fold cross validation
-
-# creating a a total Dataset by concatenating the train_ds dataset with val_ds dataset, and splitting up into k-folds.
-def create_Kfolds(train_ds, val_ds, num_folds=5):
-    tot_ds = train_ds.concatenate(val_ds)
-    ds_size = sum(1 for _ in tot_ds)
-    tot_ds = tot_ds.shuffle(ds_size)
-    fold_size = int(ds_size/num_folds)
-    folds = []
-    for fold in range(num_folds):
-        if fold==0:
-            fold_ds = tot_ds.take(fold_size)
-        elif fold==(num_folds-1):
-            fold_ds = tot_ds.skip(fold_size).skip(fold_size)
-        else:
-            fold_ds = tot_ds.skip(fold_size).take(fold_size)
-        folds.append(fold_ds)
-    return folds
+# saving the final models using SavedModel format, that saves the model architecture, weights, and the traced
+# Tensorflow subgraphs of the call functions. This enables Keras to restore both built-in layers as well as custom
+# objects (the NeighborsAccuracy()&TrueAccuracy() custom validation metrics).
 
 
-# reconstruct the models identically.
-SkinType_model = tf.keras.models.load_model('SkinType_model',
-                 custom_objects={"NeighborsAccuracy": NeighborsAccuracy, "TrueAccuracy": TrueAccuracy})
-Gender_model = tf.keras.models.load_model('Gender_model')
-Age_model = tf.keras.models.load_model('Age_model')
-
-
+gender_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='gender', model_type='late-fusion')
+age_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='age', model_type='late-fusion')
 reg_skintype_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='reg_skin-type', model_type='late-fusion')
-train_ds, val_ds = reg_skintype_latefusion_model.create_datasets(batch_size=64)
 
-folds_list  = create_Kfolds(train_ds, val_ds)
+models = [reg_skintype_latefusion_model, gender_latefusion_model, age_latefusion_model]
+names = ['SkinType_model','Gender_model','Age_model']
+best_bs = [64,32,32]
+best_lr = [0.0001,0.0001,0.001]
+for mod,bs,lr,name in zip(models,best_bs,best_lr,names):
+    train_ds, val_ds = mod.create_datasets(batch_size=bs)
 
-fold1_ds = folds_list[0]
+    model = mod.make_model(learning_rate=lr)  # metrics=METRICS
+    print(model.summary())
 
-scoers = SkinType_model.evaluate(fold1_ds)
+    mod.fit(model, train_ds, val_ds, NAME=str(bs) + "_" + str(lr), show_plots=False)
 
-print(scoers)
-
-
-
-
-
+    # Creating a SavedModel folder `name_model`.
+    model.save(name)

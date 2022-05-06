@@ -229,34 +229,7 @@ class MenowModel():
             output = tf.nn.softmax(x)
             model = tf.keras.Model(embedding_input, output)
 
-        elif self.label == 'age':
-            embedding_input = tf.keras.Input(shape=(input_shape,), name='embedding_input')
-            x = tf.keras.layers.BatchNormalization(axis=1)(embedding_input)
-            x = tf.keras.layers.Dense(128*2, activation="relu")(x)
-            #x = tf.keras.layers.Dropout(0.5)(x)
-            x = tf.keras.layers.BatchNormalization(axis=1)(x)
-            x = tf.keras.layers.Dense(128*2, activation="relu")(x)
-            x = tf.keras.layers.Dropout(0.5)(x)
-            x = tf.keras.layers.BatchNormalization(axis=1)(x)
-            x = tf.keras.layers.Dense(128, activation="relu")(x)
-            x = tf.keras.layers.BatchNormalization(axis=1)(x)
-            x = tf.keras.layers.Dense(128, activation="relu")(x)
-            x = tf.keras.layers.Dropout(0.5)(x)
-            x = tf.keras.layers.BatchNormalization(axis=1)(x)
-            x = tf.keras.layers.Dense(64, activation="relu")(x)
-            x = tf.keras.layers.BatchNormalization(axis=1)(x)
-            x = tf.keras.layers.Dense(64, activation="relu")(x)
-            x = tf.keras.layers.Dropout(0.5)(x)
-            x = tf.keras.layers.BatchNormalization(axis=1)(x)
-            x = tf.keras.layers.Dense(64, activation="relu")(x)
-            x = tf.keras.layers.BatchNormalization(axis=1)(x)
-            x = tf.keras.layers.Dense(64, activation="relu")(x)
-            #x = tf.keras.layers.Dropout(0.5)(x)
-            output = tf.keras.layers.Dense(1)(x)
-            model = tf.keras.Model(embedding_input, output)
-
-
-        elif self.label == 'reg_skin-type':
+        elif self.label == 'reg_skin-type' or self.label == 'age':
             embedding_input = tf.keras.Input(shape=(input_shape,), name='embedding_input')
             x = tf.keras.layers.BatchNormalization(axis=1)(embedding_input)
             x = tf.keras.layers.Dense(128*2, activation="relu")(x)
@@ -368,7 +341,7 @@ class MenowModel():
             mode='min',
             restore_best_weights=True)
 
-        logdir = 'logs_bs_lr_SkinTypeReg/{}'.format(NAME) + "/image/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+        logdir = 'logs_exp/{}'.format(NAME) + "/image/" + datetime.now().strftime("%Y%m%d-%H%M%S")
         # Define the basic TensorBoard callback.
         tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=logdir, histogram_freq=1)
         file_writer_cm = tf.summary.create_file_writer(logdir + '/cm')
@@ -449,6 +422,13 @@ class MenowModel():
         y_preds = model.predict(val_ds)
         y_true = self.testy.copy()
 
+        if self.label == "skin-type" :
+            y_true = tf.keras.utils.to_categorical(y_true - 1)
+            y_true, y_preds = np.argmax(y_true, axis=1), np.argmax(y_preds, axis=1)
+        elif self.label == "gender":
+            y_true = tf.keras.utils.to_categorical(y_true)
+            y_true, y_preds = np.argmax(y_true, axis=1), np.argmax(y_preds, axis=1)
+
         neighborsaccuracy = NeighborsAccuracy()
         neighborsaccuracy.update_state(y_true, y_preds)
         NeighborsAcc_score = neighborsaccuracy.result()
@@ -459,14 +439,7 @@ class MenowModel():
         TrueAcc_score = trueaccuracy.result()
         print(f"True Acc: {TrueAcc_score * 100:.2f}%")
 
-        if self.label == "skin-type" :
-            y_true = tf.keras.utils.to_categorical(y_true - 1)
-        elif self.label == "gender":
-            y_true = tf.keras.utils.to_categorical(y_true)
-
-        if self.label == 'skin-type' or self.label == 'gender':
-            y_true, y_preds = np.argmax(y_true, axis=1), np.argmax(y_preds, axis=1)
-        elif self.label == 'reg_skin-type':
+        if self.label == 'reg_skin-type':
             y_preds = np.around(y_preds)
             # for the confusion_matrix
             y_preds -= 1
@@ -498,14 +471,15 @@ class MenowModel():
                 plt.xlabel('Predicted')
                 plt.show()
 
+
         elif self.label == 'age':
             print(y_true)
             print(type(y_true), y_true.shape)
             print(y_preds)
             print(type(y_preds), y_preds.shape)
+            MAE = model.evaluate(val_ds)
+            print(f"MAE: {MAE:.2f}")
 
-            eval = model.evaluate(val_ds)
-            print(eval)
             if plot_cm == True:
                 error = y_preds - y_true
                 plt.hist(error, bins=25)
@@ -513,7 +487,7 @@ class MenowModel():
                 plt.ylabel('Count')
                 plt.show()
 
-        return TrueAcc_score, NeighborsAcc_score
+        return TrueAcc_score, NeighborsAcc_score, MAE
 
 
 

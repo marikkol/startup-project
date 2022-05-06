@@ -37,32 +37,36 @@ y shape:   (vidslable, imgs)
 #gender_singleframe_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='gender', model_type='single-frame')
 #gender_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='gender', model_type='late-fusion')
 #age_singleframe_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='age', model_type='single-frame')
-#age_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='age', model_type='late-fusion')
-reg_skintype_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='reg_skin-type', model_type='late-fusion')
+age_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='age', model_type='late-fusion')
+#reg_skintype_latefusion_model = MenowModel(trainX_arr, trainy_arr, testX_arr, testy_arr, label='reg_skin-type', model_type='late-fusion')
 
 
 tf.random.set_seed(1234)
 
 NeighborsAcc_scores = list()
 TrueAcc_scores = list()
+MAE_scores = list()
 bs_lr = list()
 for bs in [32,64,128]:
     for lr in [1e-2,1e-3,1e-4,1e-5]:
-        train_ds, val_ds = reg_skintype_latefusion_model.create_datasets(batch_size=bs)
+        train_ds, val_ds = age_latefusion_model.create_datasets(batch_size=bs)
 
-        model = reg_skintype_latefusion_model.make_model(learning_rate=lr)   # metrics=METRICS
+        model = age_latefusion_model.make_model(learning_rate=lr)   # metrics=METRICS
         print(model.summary())
 
-        reg_skintype_latefusion_model.fit(model, train_ds, val_ds, NAME=str(bs)+"_"+str(lr), show_plots=False)
+        age_latefusion_model.fit(model, train_ds, val_ds, NAME=str(bs)+"_"+str(lr), show_plots=False)
 
-        TrueAcc_score, NeighborsAcc_score = reg_skintype_latefusion_model.evaluate(model, val_ds, plot_cm=False)
+        TrueAcc_score, NeighborsAcc_score, MAE = age_latefusion_model.evaluate(model, val_ds, plot_cm=False)
         TrueAcc_score = TrueAcc_score.numpy()
         NeighborsAcc_score = NeighborsAcc_score.numpy()
 
         bs_lr.append(str(bs) + '_' + str(lr))
         TrueAcc_scores.append(TrueAcc_score)
         NeighborsAcc_scores.append(NeighborsAcc_score)
+        MAE_scores.append(MAE)
+
 
 print(f"The True-Accuracy scores: {TrueAcc_scores}\n"
       f"The Neighbors-Accuracy scores: {NeighborsAcc_scores}\n"
+      f"The MAE scores: {MAE_scores}\n"
       f"bs_lr: {bs_lr}")
