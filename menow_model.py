@@ -471,6 +471,8 @@ class MenowModel():
                 plt.xlabel('Predicted')
                 plt.show()
 
+            MAE = None
+
 
         elif self.label == 'age':
             print(y_true)

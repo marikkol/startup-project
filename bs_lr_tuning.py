@@ -51,7 +51,7 @@ for bs in [32,64,128]:
     for lr in [1e-2,1e-3,1e-4,1e-5]:
         train_ds, val_ds = age_latefusion_model.create_datasets(batch_size=bs)
 
-        model = age_latefusion_model.make_model(learning_rate=lr)   # metrics=METRICS
+        model = age_latefusion_model.make_model(learning_rate=lr)
         print(model.summary())
 
         age_latefusion_model.fit(model, train_ds, val_ds, NAME=str(bs)+"_"+str(lr), show_plots=False)

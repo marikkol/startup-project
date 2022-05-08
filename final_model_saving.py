@@ -48,7 +48,7 @@ best_lr = [0.0001,0.0001,0.001]
 for mod,bs,lr,name in zip(models,best_bs,best_lr,names):
     train_ds, val_ds = mod.create_datasets(batch_size=bs)
 
-    model = mod.make_model(learning_rate=lr)  # metrics=METRICS
+    model = mod.make_model(learning_rate=lr)
     print(model.summary())
 
     mod.fit(model, train_ds, val_ds, NAME=str(bs) + "_" + str(lr), show_plots=False)

@@ -1,6 +1,8 @@
 
 import sys
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 import tensorflow as tf
 
 sys.path.append(r'C:\Users\USER1\Desktop\MeNow Project')
@@ -64,12 +66,50 @@ train_ds, val_ds = reg_skintype_latefusion_model.create_datasets(batch_size=64)
 
 folds_list  = create_Kfolds(train_ds, val_ds)
 
-fold1_ds = folds_list[0]
+repeats = 30
+neighbors_scoers = list()
+true_scoers = list()
+for i in range(repeats):
+    run_neighbors_scoers = list()
+    run_true_scoers = list()
+    for i in range(len(folds_list)):
+        l = folds_list.copy()
+        val = l.pop(i)
+        if len(l)==4:
+            fold0_ds, fold1_ds, fold2_ds, fold3_ds = l[0], l[1], l[2], l[3]
+            ds1 = fold0_ds.concatenate(fold1_ds)
+            ds2 = fold2_ds.concatenate(fold3_ds)
+            train = ds1.concatenate(ds2)
+        model = reg_skintype_latefusion_model.make_model(learning_rate=0.0001)
+        print(model.summary())
+        reg_skintype_latefusion_model.fit(model, train_ds, val_ds, NAME=str(64) + "_" + str(0.0001), show_plots=False)
+        true_skill, neighbors_skill, _ = reg_skintype_latefusion_model.evaluate(model, val_ds, plot_cm=False)
+        true_skill = true_skill.numpy()
+        neighbors_skill = neighbors_skill.numpy()
+        run_neighbors_scoers.append(neighbors_skill)
+        run_true_scoers.append(true_skill)
+    neighbors_mean = np.mean(run_neighbors_scoers)
+    true_mean = np.mean(run_true_scoers)
+    print(f"The True-Accuracy run scores: {run_true_scoers}, the mean: {true_mean}\n"
+          f"The Neighbors-Accuracy run scores: {run_neighbors_scoers}, the mean: {neighbors_mean}\n")
+    true_mean = np.round(true_mean, 2)
+    neighbors_mean = np.round(neighbors_mean, 2)
+    true_scoers.append(true_mean)
+    neighbors_scoers.append(neighbors_mean)
 
-scoers = SkinType_model.evaluate(fold1_ds)
+print(f"The True-Accuracy scores: {true_scoers}\n"
+      f"The Neighbors-Accuracy scores: {neighbors_scoers}\n")
 
-print(scoers)
+true_scoers = np.array(true_scoers)
+neighbors_scoers = np.array(neighbors_scoers)
+np.savez_compressed('Evaluation_SkinType_ModelStability.npz', true_scoers, neighbors_scoers)
 
+
+sns.displot(data=true_scoers, kde=True)
+plt.show()
+
+sns.displot(data=neighbors_scoers, kde=True)
+plt.show()
 
 
 
