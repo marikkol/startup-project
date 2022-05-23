@@ -44,7 +44,7 @@ y shape:   (vidslable, imgs)
 class MenowModel():
 
 
-    def __init__(self, trainX, trainy, testX, testy, label='skin-type', model_type='late-fusion', imbalance='oversample'):
+    def __init__(self, trainX, trainy, testX, testy, label='skin-type', model_type='late-fusion', imbalance='None'):
 
         # sanity check
         assert len(trainX)==len(trainy) and len(testX)==len(testy), "size of X and y have to be the same"
@@ -233,7 +233,6 @@ class MenowModel():
             embedding_input = tf.keras.Input(shape=(input_shape,), name='embedding_input')
             x = tf.keras.layers.BatchNormalization(axis=1)(embedding_input)
             x = tf.keras.layers.Dense(128*2, activation="relu")(x)
-            #x = tf.keras.layers.Dropout(0.5)(x)
             x = tf.keras.layers.BatchNormalization(axis=1)(x)
             x = tf.keras.layers.Dense(128*2, activation="relu")(x)
             x = tf.keras.layers.Dropout(0.5)(x)
@@ -246,7 +245,6 @@ class MenowModel():
             x = tf.keras.layers.Dense(64, activation="relu")(x)
             x = tf.keras.layers.BatchNormalization(axis=1)(x)
             x = tf.keras.layers.Dense(64, activation="relu")(x)
-            #x = tf.keras.layers.Dropout(0.5)(x)
             output = tf.keras.layers.Dense(1)(x)
             model = tf.keras.Model(embedding_input, output)
 
@@ -341,7 +339,7 @@ class MenowModel():
             mode='min',
             restore_best_weights=True)
 
-        logdir = 'logs_exp/{}'.format(NAME) + "/image/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+        logdir = 'logs_stam/{}'.format(NAME) + "/image/" + datetime.now().strftime("%Y%m%d-%H%M%S")
         # Define the basic TensorBoard callback.
         tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=logdir, histogram_freq=1)
         file_writer_cm = tf.summary.create_file_writer(logdir + '/cm')

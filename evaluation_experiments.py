@@ -2,6 +2,7 @@
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 import seaborn as sns
 import tensorflow as tf
 
@@ -104,13 +105,22 @@ true_scoers = np.array(true_scoers)
 neighbors_scoers = np.array(neighbors_scoers)
 np.savez_compressed('Evaluation_SkinType_ModelStability.npz', true_scoers, neighbors_scoers)
 
+# plot results
+data = np.load('Evaluation_SkinType_ModelStability.npz', allow_pickle=True)
+d = {'true_scoers': data['arr_0']*100, 'neighbors_scoers': data['arr_1']*100}
+df = pd.DataFrame(data=d)
 
-sns.displot(data=true_scoers, kde=True)
+means = np.array([np.mean(df.true_scoers.values), np.mean(df.neighbors_scoers.values)])
+means = np.round(means, 2)
+stds = np.array([np.std(df.true_scoers.values), np.std(df.neighbors_scoers.values)])
+stds = np.round(stds, 2)
+
+sns.set(style="darkgrid")
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(10,4))
+fig.suptitle("SkinType Evaluation: 30-repeats, 5-Fold")
+sns.histplot(data=df, x='true_scoers', kde=True, ax=ax[0])
+ax[0].set_title("mean: "+str(means[0]) + " ,std: "+str(stds[0]))
+sns.histplot(data=df, x='neighbors_scoers', kde=True, ax=ax[1])
+ax[1].set_title("mean: "+str(means[1]) + " ,std: "+str(stds[1]))
 plt.show()
-
-sns.displot(data=neighbors_scoers, kde=True)
-plt.show()
-
-
-
 
